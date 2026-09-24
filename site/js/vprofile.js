@@ -93,31 +93,44 @@
     };
   }
 
+  // ------------------------------------------------------------ 版面：分佈區放在最後一根 K 棒右側（或第一根左側），不與 K 棒重疊
+  // chartWidth：K 線圖寬度；span：可視 K 棒數；回傳分佈區寬度 W、與 K 棒間距 gap、需額外保留的邊界 extra（px）
+  function layout(cfg, chartWidth, span) {
+    // 手機（窄螢幕）時分佈寬度自動縮為 60%，讓 K 棒保有足夠空間
+    const pct = clamp(+cfg.width || 31, 5, 60) * (chartWidth < 600 ? 0.6 : 1);
+    const W = Math.round((chartWidth * pct) / 100);
+    const plot = Math.max(80, chartWidth - 60 - W);
+    const gap = Math.round(((+cfg.offset || 0) * plot) / Math.max(1, span + (+cfg.offset || 0)));
+    return { W, gap, extra: W + gap + 4 };
+  }
+
+  // 分佈區在畫布上的水平位置
+  function region(cs, L, right) {
+    const x0 = right ? cs.x + cs.width + L.gap : cs.x - L.gap - L.W;
+    return { x0, x1: x0 + L.W };
+  }
+
   // ------------------------------------------------------------ 繪製（ECharts custom series）
-  function series(t, getCfg, state, fmt) {
+  function series(t, getCfg, state) {
     return {
-      id: "vp", type: "custom", xAxisIndex: 0, yAxisIndex: 0, z: 1, silent: true, clip: true,
+      id: "vp", type: "custom", xAxisIndex: 0, yAxisIndex: 0, z: 1, silent: true, clip: false,
       tooltip: { show: false }, data: [[state.end, state.mid]], encode: { x: 0, y: 1 },
       renderItem: (params, api) => {
-        const P = state.profile, cfg = getCfg();
-        if (!P) return null;
+        const P = state.profile, cfg = getCfg(), L = state.layout;
+        if (!P || !L) return null;
         const cs = params.coordSys;
-        const band = api.size([1, 0])[0];
-        const W = (cs.width * clamp(+cfg.width || 31, 5, 100)) / 100;
         const right = cfg.placement !== "left";
-        const off = (+cfg.offset || 0) * band;
-        const anchor = right ? cs.x + cs.width - off : cs.x + off;
-        const Y = (p) => api.coord([P.to, p])[1];
+        const { x0, x1 } = region(cs, L, right);
+        const band = api.size([1, 0])[0];
+        const Yraw = (p) => api.coord([P.to, p])[1];
+        const Y = (p) => clamp(Yraw(p), cs.y, cs.y + cs.height); // 不超出 K 線圖上下緣
         const xFrom = Math.max(cs.x, api.coord([P.from, P.hi])[0] - band / 2);
-        const xTo = cs.x + cs.width;
         const ch = [];
         const rect = (x, y, w, h, fill) => ch.push({ type: "rect", shape: { x, y, width: Math.max(0, w), height: Math.max(0, h) }, style: { fill } });
 
-        // 背景：分佈計算範圍、數值區
-        if (cfg.rangeBg) rect(xFrom, Y(P.hi), xTo - xFrom, Y(P.lo) - Y(P.hi), rgba(cfg.rangeBgColor, 0.1));
-        if (cfg.vaBg) rect(xFrom, Y(P.vah), xTo - xFrom, Y(P.val) - Y(P.vah), rgba(cfg.vaBgColor, 0.12));
-
-        // 供需區：成交量低於 POC 某比例的連續價位（在現價之上為供給區、之下為需求區）
+        // 背景（半透明、位於 K 棒下層）：計算範圍、數值區、供需區
+        if (cfg.rangeBg) rect(xFrom, Y(P.hi), x1 - xFrom, Y(P.lo) - Y(P.hi), rgba(cfg.rangeBgColor, 0.1));
+        if (cfg.vaBg) rect(xFrom, Y(P.vah), x1 - xFrom, Y(P.val) - Y(P.vah), rgba(cfg.vaBgColor, 0.12));
         if (cfg.zones) {
           const thr = (P.maxTot * clamp(+cfg.zoneThreshold || 15, 1, 100)) / 100;
           const last = t.c[P.to];
@@ -128,67 +141,65 @@
               while (r2 + 1 < P.R && P.tot[r2 + 1] < thr) r2++;
               const pLo = P.lo + r * P.step, pHi = P.lo + (r2 + 1) * P.step;
               const color = (pLo + pHi) / 2 >= last ? cfg.supplyColor : cfg.demandColor;
-              rect(xFrom, Y(pHi), xTo - xFrom, Y(pLo) - Y(pHi), rgba(color, 0.22));
+              rect(xFrom, Y(pHi), x1 - xFrom, Y(pLo) - Y(pHi), rgba(color, 0.22));
               r = r2 + 1;
             } else r++;
           }
         }
 
-        // 成交量分佈橫條：靠錨點為上漲量，外側為下跌量
+        // 分佈橫條：開啟情緒分佈時，分佈佔 2/3、情緒佔 1/3（靠 K 棒一側）
+        const sentW = cfg.sentiment ? L.W / 3 : 0;
+        const barW = L.W - sentW;
         for (let r = 0; r < P.R; r++) {
           if (!P.tot[r]) continue;
-          const y1 = Y(P.lo + (r + 1) * P.step), y2 = Y(P.lo + r * P.step);
-          const h = Math.max(1, Math.abs(y2 - y1) - (Math.abs(y2 - y1) > 3 ? 1 : 0));
+          const yTop = Yraw(P.lo + (r + 1) * P.step), yBot = Yraw(P.lo + r * P.step);
+          if (yBot < cs.y || yTop > cs.y + cs.height) continue;
+          const h = Math.max(1, Math.abs(yBot - yTop) - (Math.abs(yBot - yTop) > 3 ? 1 : 0));
           const inVA = r >= P.vl && r <= P.vh;
           const uc = rgba(inVA ? cfg.vaUpColor : cfg.upColor, 0.85), dc = rgba(inVA ? cfg.vaDownColor : cfg.downColor, 0.85);
-          const uw = (P.up[r] / P.maxTot) * W, dw = (P.dn[r] / P.maxTot) * W;
-          if (right) { rect(anchor - uw, y1, uw, h, uc); rect(anchor - uw - dw, y1, dw, h, dc); }
-          else { rect(anchor, y1, uw, h, uc); rect(anchor + uw, y1, dw, h, dc); }
-          if (cfg.sentiment && P.net[r]) {
-            const sw = (Math.abs(P.net[r]) / P.maxNet) * W * 0.5;
+          const uw = (P.up[r] / P.maxTot) * barW, dw = (P.dn[r] / P.maxTot) * barW;
+          if (right) { rect(x1 - uw, yTop, uw, h, uc); rect(x1 - uw - dw, yTop, dw, h, dc); }
+          else { rect(x0, yTop, uw, h, uc); rect(x0 + uw, yTop, dw, h, dc); }
+          if (sentW && P.net[r]) {
+            const sw = (Math.abs(P.net[r]) / P.maxNet) * (sentW - 4);
             const sc = rgba(P.net[r] > 0 ? cfg.bullColor : cfg.bearColor, 0.8);
-            if (right) rect(anchor - W - 6 - sw, y1, sw, h, sc); else rect(anchor + W + 6, y1, sw, h, sc);
+            if (right) rect(x0, yTop, sw, h, sc); else rect(x1 - sw, yTop, sw, h, sc);
           }
         }
-
         return { type: "group", children: ch };
       },
     };
   }
 
-  // 上層（壓在 K 棒之上）：POC、VAH、VAL 線與價位標籤
+  // POC、VAH、VAL 線與價位標籤：只畫在分佈區內，不穿過 K 棒
   function overlay(t, getCfg, state, fmt) {
     return {
-      id: "vp-lines", type: "custom", xAxisIndex: 0, yAxisIndex: 0, z: 5, silent: true, clip: true,
+      id: "vp-lines", type: "custom", xAxisIndex: 0, yAxisIndex: 0, z: 5, silent: true, clip: false,
       tooltip: { show: false }, data: [[state.end, state.mid]], encode: { x: 0, y: 1 },
       renderItem: (params, api) => {
-        const P = state.profile, cfg = getCfg();
-        if (!P) return null;
+        const P = state.profile, cfg = getCfg(), L = state.layout;
+        if (!P || !L) return null;
         const cs = params.coordSys;
-        const band = api.size([1, 0])[0];
         const right = cfg.placement !== "left";
+        const { x0, x1 } = region(cs, L, right);
+        const inside = (y) => y >= cs.y && y <= cs.y + cs.height;
         const Y = (p) => api.coord([P.to, p])[1];
-        const xFrom = Math.max(cs.x, api.coord([P.from, P.hi])[0] - band / 2), xTo = cs.x + cs.width;
         const ch = [];
-        const hline = (y, color, width, dashed, x1 = cs.x) =>
-          ch.push({ type: "line", shape: { x1, y1: y, x2: xTo, y2: y }, style: { stroke: color, lineWidth: width, lineDash: dashed ? [4, 3] : null } });
+        const hline = (y, color, width, dashed) => { if (inside(y)) ch.push({ type: "line", shape: { x1: x0, y1: y, x2: x1, y2: y }, style: { stroke: color, lineWidth: width, lineDash: dashed ? [4, 3] : null } }); };
         const fontSize = { small: 10, normal: 12, large: 14 }[cfg.labelSize] || 10;
         const label = (y, text, color) => {
-          // 標籤一律放在線的上方；太靠近上緣時改放線的下方，確保不被裁切
+          if (!inside(y)) return;
           const above = y - fontSize - 6 >= cs.y;
-          ch.push({ type: "text", x: right ? xTo - 4 : cs.x + 4, y: above ? y - 2 : y + 2,
+          ch.push({ type: "text", x: right ? x1 - 2 : x0 + 2, y: above ? y - 2 : y + 2,
             style: { text, fill: color, font: `bold ${fontSize}px sans-serif`, align: right ? "right" : "left",
               verticalAlign: above ? "bottom" : "top", backgroundColor: "rgba(255,255,255,.85)", padding: [1, 3], borderRadius: 3 } });
         };
-        if (cfg.poc === "last") hline(Y(P.pocPrice), cfg.pocColor, +cfg.pocWidth || 2, false);
-        if (cfg.poc === "developing" && P.dpoc.length > 1) {
-          ch.push({ type: "polyline", shape: { points: P.dpoc.map(([i, p]) => api.coord([i, p])) },
-            style: { stroke: cfg.pocColor, lineWidth: +cfg.pocWidth || 2, fill: null } });
-        }
-        if (cfg.vah) hline(Y(P.vah), cfg.vahColor, +cfg.vahWidth || 1, true, xFrom);
-        if (cfg.val) hline(Y(P.val), cfg.valColor, +cfg.valWidth || 1, true, xFrom);
+        const pocY = Y(cfg.poc === "developing" && P.dpoc.length ? P.dpoc[P.dpoc.length - 1][1] : P.pocPrice);
+        if (cfg.poc !== "none") hline(pocY, cfg.pocColor, +cfg.pocWidth || 2, false);
+        if (cfg.vah) hline(Y(P.vah), cfg.vahColor, +cfg.vahWidth || 1, true);
+        if (cfg.val) hline(Y(P.val), cfg.valColor, +cfg.valWidth || 1, true);
         if (cfg.priceLevels) {
-          if (cfg.poc !== "none") label(Y(cfg.poc === "developing" && P.dpoc.length ? P.dpoc[P.dpoc.length - 1][1] : P.pocPrice), `POC ${fmt(P.pocPrice)}`, cfg.pocColor);
+          if (cfg.poc !== "none") label(pocY, `POC ${fmt(P.pocPrice)}`, cfg.pocColor);
           if (cfg.vah) label(Y(P.vah), `VAH ${fmt(P.vah)}`, cfg.vahColor);
           if (cfg.val) label(Y(P.val), `VAL ${fmt(P.val)}`, cfg.valColor);
         }
@@ -198,8 +209,8 @@
   }
 
   // 綁到 K 線圖：初次計算，並於縮放／拖曳後重新計算可視範圍的分佈
-  function attach(chart, t, getCfg, start, end, fmt) {
-    const state = { profile: null, end, mid: (t.h[end] + t.l[end]) / 2 };
+  function attach(chart, t, getCfg, start, end, fmt, L) {
+    const state = { profile: null, layout: L, end, mid: (t.h[end] + t.l[end]) / 2 };
     const recalc = (s, e) => {
       state.profile = compute(t, s, e, getCfg());
       state.end = e;
@@ -211,7 +222,7 @@
       recalc(z.startValue, z.endValue);
       chart.setOption({ series: [{ id: "vp", data: [[state.end, state.mid]] }, { id: "vp-lines", data: [[state.end, state.mid]] }] });
     });
-    return [series(t, getCfg, state, fmt), overlay(t, getCfg, state, fmt)];
+    return [series(t, getCfg, state), overlay(t, getCfg, state, fmt)];
   }
 
   // ------------------------------------------------------------ 參數設定畫面
@@ -225,8 +236,8 @@
     ["num", "固定根數 Lookback Length", "length", 10, 2000],
     ["num", "價位列數 Number of Rows", "rows", 10, 400],
     ["select", "位置 Placement", "placement", [["right", "右"], ["left", "左"]]],
-    ["num", "寬度 Profile Width (%)", "width", 5, 100],
-    ["num", "水平位移 Horizontal Offset（K 棒數）", "offset", 0, 100],
+    ["num", "寬度 Profile Width（佔圖寬 %）", "width", 5, 60],
+    ["num", "與最後一根 K 棒間距 Offset（K 棒數）", "offset", 0, 50],
     ["section", "Point of Control / 數值區線"],
     ["select", "POC 顯示方式", "poc", [["last", "最後（直線）"], ["developing", "動態（Developing）"], ["none", "不顯示"]]],
     ["colornum", "POC 顏色／線寬", "pocColor", "pocWidth"],
@@ -296,5 +307,5 @@
     });
   }
 
-  window.VP = { DEFAULTS, load, save, compute, attach, openSettings };
+  window.VP = { DEFAULTS, load, save, compute, layout, attach, openSettings };
 })();

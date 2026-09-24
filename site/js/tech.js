@@ -212,17 +212,23 @@
     if (ov.lo) S.push(line("下布林", t.boll.lo, P.boll, { lineStyle: { type: "dotted", width: 1.4 } }));
     if (ov.sarUp) S.push(line("SAR多", t.sarUp, P.sarUp, { smooth: false, lineStyle: { width: 1.5 } }));
     if (ov.sarDn) S.push(line("SAR空", t.sarDn, P.sarDn, { smooth: false, lineStyle: { width: 1.5 } }));
+    // 成交量分佈：在 K 棒右側（或左側）保留專用空間，價格刻度移到分佈外側
+    let vpL = null, vpRight = true;
     if (ov.vp && window.VP) {
-      const n = t.d.length;
-      S.push(...VP.attach(c, t, VP.load, Math.max(0, n - span), n - 1, (v) => fmt(v, v >= 100 ? 1 : 2)));
+      const n = t.d.length, cfg = VP.load();
+      vpRight = cfg.placement !== "left";
+      vpL = VP.layout(cfg, el.clientWidth || 360, span);
+      S.push(...VP.attach(c, t, VP.load, Math.max(0, n - span), n - 1, (v) => fmt(v, v >= 100 ? 1 : 2), vpL));
     }
+    const padR = 52 + (vpL && vpRight ? vpL.extra : 0), padL = 8 + (vpL && !vpRight ? vpL.extra : 0);
+    const yOff = vpL && vpRight ? vpL.extra : 0;
     S.push({ name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, barWidth: "70%", barMaxWidth: 18,
       data: t.v.map((v, i) => ({ value: v, itemStyle: { color: volColor(i) } })) });
     S.push(line("量MA5", t.vma5, P.vma, { xAxisIndex: 1, yAxisIndex: 1, smooth: true, lineStyle: { width: 1.2 } }));
     c.setOption(baseOpt(t, P, {
-      grid: [{ left: 8, right: 52, top: 12, height: "62%" }, { left: 8, right: 52, top: "74%", bottom: 50 }],
+      grid: [{ left: padL, right: padR, top: 12, height: "62%" }, { left: padL, right: padR, top: "74%", bottom: 50 }],
       xAxis: [xCat(t, P, 0, false), xCat(t, P, 1, true)],
-      yAxis: [yVal(P), yVal(P, { gridIndex: 1, splitNumber: 2, axisLabel: { color: P.text, fontSize: 10, formatter: (v) => (v >= 1e4 ? +(v / 1e4).toFixed(1) + "萬" : v) } })],
+      yAxis: [yVal(P, { offset: yOff }), yVal(P, { gridIndex: 1, offset: yOff, splitNumber: 2, axisLabel: { color: P.text, fontSize: 10, formatter: (v) => (v >= 1e4 ? +(v / 1e4).toFixed(1) + "萬" : v) } })],
       dataZoom: zoomOpt(t, span, true),
       series: S,
     }));
