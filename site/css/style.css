@@ -398,3 +398,24 @@ body.no-scroll { overflow: hidden; }
 .tag { font-size: 17px; font-weight: 800; padding: 2px 10px; border-radius: 4px; color: #111; }
 .tag.t1 { background: #fff200; } .tag.t2 { background: #b6cff0; } .tag.t3 { background: #c7ecc4; }
 .inst-chart { height: 280px; }
+
+/* 自選股表：手機固定欄寬，確保 6 欄完整顯示 */
+@media (max-width: 520px) {
+  .view { padding-left: 10px; padding-right: 10px; }
+  .watch-tbl { table-layout: fixed; width: 100%; }
+  .watch-tbl .c-stk { width: 20%; }
+  .watch-tbl .c-px  { width: 22%; }
+  .watch-tbl .c-chg { width: 17%; }
+  .watch-tbl .c-pct { width: 13%; }
+  .watch-tbl .c-vol { width: 16%; }
+  .watch-tbl .c-amp { width: 12%; }
+  .watch-tbl th, .watch-tbl td { padding: 8px 1px; font-size: 12px; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+  .watch-tbl .stk { min-width: 0; padding-left: 2px; }
+  .watch-tbl .stk b { font-size: 13.5px; white-space: normal; line-height: 1.25; }
+  .watch-tbl td.num b { font-size: 13px; }
+}
+@media (max-width: 360px) {
+  .watch-tbl th, .watch-tbl td { font-size: 11px; }
+  .watch-tbl td.num b { font-size: 12px; }
+  .watch-tbl .stk b { font-size: 12.5px; }
+}

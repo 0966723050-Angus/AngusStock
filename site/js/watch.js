@@ -57,6 +57,7 @@
       <article class="card">
         <div class="tbl-wrap">
           <table class="tbl watch-tbl">
+            <colgroup><col class="c-stk"><col class="c-px"><col class="c-chg"><col class="c-pct"><col class="c-vol"><col class="c-amp"></colgroup>
             <thead><tr><th>股票</th><th>成交價</th><th>漲跌</th><th>漲幅%</th><th>成交量</th><th>振幅%</th></tr></thead>
             <tbody>${items.length ? items.map(row).join("") : '<tr><td colspan="6" class="empty">尚無自選股，請按右上角「編輯」新增</td></tr>'}</tbody>
           </table>
