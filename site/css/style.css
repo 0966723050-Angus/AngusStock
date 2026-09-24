@@ -361,3 +361,6 @@ body.no-scroll { overflow: hidden; }
   .watch-tbl td.num b, .watch-tbl .stk b { font-size: 13.5px; }
   .watch-tbl .stk { min-width: 64px; padding-left: 8px; }
 }
+
+/* 表格各欄一律置中 */
+.tbl th, .tbl td, .tbl td.num, .tbl td.c, .tbl .rk { text-align: center; }
