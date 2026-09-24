@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="css/style.css?v=2">
+<link rel="stylesheet" href="css/style.css?v=3">
 </head>
 <body>
 
@@ -23,11 +23,12 @@
     <h1>Angus 股市</h1>
     <p class="muted">台股交易資訊與技術指標查詢</p>
     <label>帳號
-      <input id="loginUser" name="username" autocomplete="username" inputmode="numeric" required>
+      <input id="loginUser" name="username" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="username" inputmode="numeric" required>
     </label>
     <label>密碼
-      <input id="loginPwd" name="password" type="password" autocomplete="current-password" required>
+      <input id="loginPwd" name="password" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" required>
     </label>
+    <label class="check"><input id="showPwd" type="checkbox"> 顯示密碼</label>
     <label class="check"><input id="loginRemember" type="checkbox" checked> 在此裝置保持登入</label>
     <p id="loginMsg" class="login-msg" role="alert"></p>
     <button type="submit" id="loginBtn" class="btn-primary">登入</button>
@@ -71,8 +72,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-<script src="js/app.js?v=2"></script>
-<script src="js/home.js?v=2"></script>
+<script src="js/app.js?v=3"></script>
+<script src="js/home.js?v=3"></script>
 <script>App.start();</script>
 </body>
 </html>

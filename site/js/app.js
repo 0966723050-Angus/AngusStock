@@ -215,7 +215,9 @@
     btn.disabled = true;
     $("#loginMsg").textContent = "";
     try {
-      rawKeyB64 = await unwrap($("#loginUser").value.trim(), $("#loginPwd").value);
+      // 全形轉半形（中文輸入法常見）並去除前後空白
+      const norm = (v) => v.normalize("NFKC").trim();
+      rawKeyB64 = await unwrap(norm($("#loginUser").value), norm($("#loginPwd").value));
       dataKey = await importDataKey(rawKeyB64);
       storeSet(rawKeyB64, $("#loginRemember").checked);
       $("#loginPwd").value = "";
@@ -230,6 +232,7 @@
   async function start() {
     buildMenu();
     $("#loginForm").addEventListener("submit", onLogin);
+    $("#showPwd").addEventListener("change", (e) => { $("#loginPwd").type = e.target.checked ? "text" : "password"; });
     $("#menuBtn").addEventListener("click", () => openMenu(!$("#drawer").classList.contains("open")));
     $("#scrim").addEventListener("click", () => openMenu(false));
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") openMenu(false); });
