@@ -253,8 +253,7 @@
         <tbody>
           ${sorted([item(t.macd.dif[i], "MACD-快", "m1", "", sg(t.macd.dif[i])), item(t.macd.sig[i], "MACD-慢", "m2", "", sg(t.macd.sig[i]))])}
           ${r("柱狀體", "m3", fmt(t.macd.hist[i]), fmt(t.macd.hist[p]))}
-          ${r("K-快", "k1", fmt(t.kd.k[i]))}
-          ${r("D-慢", "k2", fmt(t.kd.d[i]))}
+          ${sorted([item(t.kd.k[i], "K-快", "k1"), item(t.kd.d[i], "D-慢", "k2")])}
           ${r("J", "k3", fmt(t.kd.j[i]), fmt(t.kd.j[p]))}
           ${sorted([item(t.rsi6[i], "RSI-快", "r1"), item(t.rsi12[i], "RSI-慢", "r2")])}
           <tr class="gap"><td colspan="3"></td></tr>
@@ -284,7 +283,8 @@
     echarts.disconnect(GROUP);
     const [data, wl] = await Promise.all([App.loadData("ohlc"), App.loadData("watchlist").catch(() => null)]);
     const list = ((wl && wl.items) || Object.keys(data.stocks)).filter((c) => data.stocks[c]);
-    let code = (params.get("code") || "").toUpperCase();
+    let code = params.get("code") || "";
+    if (!data.stocks[code]) code = code.toUpperCase();
     if (!data.stocks[code]) code = list.find((c) => c !== "t00" && c !== "o00") || list[0];
     if (!code) { view.innerHTML = '<div class="card empty">尚無自選股資料</div>'; return; }
     const meta = data.stocks[code];
