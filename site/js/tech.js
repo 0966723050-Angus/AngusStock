@@ -190,11 +190,13 @@
           const x = snap(api.coord([i, c])[0]);
           const band = api.size([1, 0])[0];
           const w = Math.max(1, Math.min(18, band * 0.7));
+          // 影線約 1.5 個實體像素（高解析度螢幕上約 0.5px），比實體細很多
+          const wick = dpr >= 2 ? 1.5 / dpr : 1;
           const yO = api.coord([i, o])[1], yC = api.coord([i, c])[1], yH = api.coord([i, h])[1], yL = api.coord([i, l])[1];
           const color = c > o ? P.up : c < o ? P.down : (i > 0 && c < t.c[i - 1] ? P.down : P.up);
           const top = Math.min(yO, yC), bh = Math.max(1 / dpr, Math.abs(yO - yC));
           return { type: "group", children: [
-            { type: "line", shape: { x1: x, y1: yH, x2: x, y2: yL }, style: { stroke: color, lineWidth: 1 } },
+            { type: "line", shape: { x1: x, y1: yH, x2: x, y2: yL }, style: { stroke: color, lineWidth: wick } },
             { type: "rect", shape: { x: x - w / 2, y: top, width: w, height: bh }, style: { fill: color } },
           ] };
         } },
