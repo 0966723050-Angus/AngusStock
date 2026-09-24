@@ -176,10 +176,27 @@
     const P = palette();
     const c = echarts.init(el, null, { renderer: "canvas" });
     c.group = GROUP;
-    const candles = t.d.map((_, i) => [t.o[i], t.c[i], t.l[i], t.h[i]]);
+    const candles = t.d.map((_, i) => [i, t.o[i], t.c[i], t.l[i], t.h[i]]);
     const volColor = (i) => (i > 0 && t.c[i] < t.c[i - 1] ? P.down : P.up);
     const S = [
-      { name: "K線", type: "candlestick", data: candles, itemStyle: { color: P.up, color0: P.down, borderColor: P.up, borderColor0: P.down }, barWidth: "70%", barMaxWidth: 18 },
+      // 自繪 K 棒：影線與實體共用同一個中心 x，確保影線位於實體正中間
+      { name: "K線", type: "custom", data: candles, encode: { x: 0, y: [1, 2, 3, 4] }, clip: true, z: 2,
+        renderItem: (params, api) => {
+          const i = api.value(0), o = api.value(1), c = api.value(2), l = api.value(3), h = api.value(4);
+          if ([o, c, l, h].some((v) => v == null || isNaN(v))) return null;
+          const dpr = window.devicePixelRatio || 1;
+          const snap = (v) => (Math.round(v * dpr) + 0.5) / dpr; // 對齊實體像素，1px 線不糊
+          const x = snap(api.coord([i, c])[0]);
+          const band = api.size([1, 0])[0];
+          const w = Math.max(1, Math.min(18, band * 0.7));
+          const yO = api.coord([i, o])[1], yC = api.coord([i, c])[1], yH = api.coord([i, h])[1], yL = api.coord([i, l])[1];
+          const color = c > o ? P.up : c < o ? P.down : (i > 0 && c < t.c[i - 1] ? P.down : P.up);
+          const top = Math.min(yO, yC), bh = Math.max(1 / dpr, Math.abs(yO - yC));
+          return { type: "group", children: [
+            { type: "line", shape: { x1: x, y1: yH, x2: x, y2: yL }, style: { stroke: color, lineWidth: 1 } },
+            { type: "rect", shape: { x: x - w / 2, y: top, width: w, height: bh }, style: { fill: color } },
+          ] };
+        } },
     ];
     if (ov.ma5) S.push(line("MA5", t.ma5, P.ma5));
     if (ov.ma10) S.push(line("MA10", t.ma10, P.ma10));
