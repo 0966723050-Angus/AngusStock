@@ -403,6 +403,92 @@ def update_index_history(state, day: dt.date, months: int):
         state["otc_mkt"].update(fetch_otc_market_month(ref)); polite()
 
 
+# ---------------------------------------------------------------- 融資融券
+def fetch_tse_margin(day: dt.date):
+    """上市信用交易統計：融資金額(億)、融資(張)、融券(張)"""
+    j = get_json("https://www.twse.com.tw/exchangeReport/MI_MARGN",
+                 {"response": "json", "date": day.strftime("%Y%m%d"), "selectType": "MS"})
+    if not j or j.get("stat") != "OK":
+        return None
+    for t in j.get("tables", []):
+        rows = {r[0]: r for r in t.get("data", [])}
+        if "融資金額(仟元)" in rows:
+            return {"amt": num(rows["融資金額(仟元)"][5]) / 1e5,
+                    "fin": num(rows["融資(交易單位)"][5]), "short": num(rows["融券(交易單位)"][5])}
+    return None
+
+
+def fetch_otc_margin(day: dt.date):
+    """上櫃融資融券餘額合計"""
+    j = get_json("https://www.tpex.org.tw/www/zh-tw/margin/balance",
+                 {"date": day.strftime("%Y/%m/%d"), "response": "json"})
+    try:
+        t = j["tables"][0]
+        if roc_to_iso(t["date"]) != day.isoformat():
+            return None
+        sm = {r[1]: r for r in t["summary"]}
+        lots, amt = sm["合計(張)"], sm["融資金(仟元)"]
+        return {"amt": num(amt[6]) / 1e5, "fin": num(lots[6]), "short": num(lots[14])}
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def update_margin_history(state, days):
+    for mkt, fn in (("tse", fetch_tse_margin), ("otc", fetch_otc_margin)):
+        store = state.setdefault(f"{mkt}_margin", {})
+        for iso in days:
+            if iso in store:
+                continue
+            print(f"  {'上市' if mkt == 'tse' else '上櫃'}融資融券 {iso}")
+            v = fn(dt.date.fromisoformat(iso))
+            polite()
+            if v:
+                store[iso] = v
+
+
+def margin_streak(values):
+    """餘額逐日增減 → 「連增7日」「連3增→連3減」「連2減→增」"""
+    diffs = [b - a for a, b in zip(values, values[1:])]
+    runs = []
+    for d in diffs:
+        sgn = 1 if d > 0 else (-1 if d < 0 else 0)
+        if runs and runs[-1][0] == sgn:
+            runs[-1][1] += 1
+        else:
+            runs.append([sgn, 1])
+    if not runs:
+        return "--"
+    word = {1: "增", -1: "減", 0: "平"}
+    s, n = runs[-1]
+    if n >= 4 or len(runs) == 1:
+        return f"連{word[s]}{n}日" if n > 1 else word[s]
+    ps, pn = runs[-2]
+    return (f"連{pn}{word[ps]}" if pn > 1 else word[ps]) + "→" + (f"連{n}{word[s]}" if n > 1 else word[s])
+
+
+def build_margin(state, mkt):
+    m = state.get(f"{mkt}_margin", {})
+    dates = sorted(m)[-HISTORY_DAYS:]
+    if len(dates) < 2:
+        return None
+    cur, prev = m[dates[-1]], m[dates[-2]]
+
+    def row(key, digits):
+        chg = cur[key] - prev[key]
+        return {"bal": round(cur[key], digits), "chg": round(chg, digits),
+                "pct": round(chg / prev[key] * 100, 2) if prev[key] else None,
+                "streak": margin_streak([m[d][key] for d in dates])}
+
+    return {
+        "date": dates[-1],
+        "fin": row("amt", 2), "short": row("short", 0),
+        "ratio": round(cur["short"] / cur["fin"] * 100, 2) if cur["fin"] else None,
+        "ratio_chg": round(cur["short"] / cur["fin"] * 100 - prev["short"] / prev["fin"] * 100, 2) if cur["fin"] and prev["fin"] else None,
+        "series": [[d, round(m[d]["amt"], 2), int(m[d]["short"]), round(m[d]["short"] / m[d]["fin"] * 100, 2) if m[d]["fin"] else None]
+                   for d in dates],
+    }
+
+
 def update_inst_history(state, days):
     state.setdefault("tse_inst", {})
     state.setdefault("otc_inst", {})
@@ -573,14 +659,22 @@ def main():
         if args.watch_only:
             return
 
+    state = load_state(key)
+    # 排程備援：同一日同一時段（午盤／晚間）已成功更新過就略過
+    slot = f"{day.isoformat()}-{'PM' if now.hour >= 18 else 'AM'}"
+    scheduled = os.environ.get("SCHEDULED") == "true"
+    if scheduled and slot in state.get("done_slots", []):
+        print(f"時段 {slot} 已更新過，略過。")
+        return
+
     if not (args.force or args.backfill) and not is_trading_day(day):
         print("今日未開盤，不更新。")
         return
-
-    state = load_state(key)
     update_index_history(state, day, 7 if args.backfill else 1)
     tdays = [d for d in sorted(state["tse_idx"]) if d <= day.isoformat()]
     update_inst_history(state, tdays[-(HISTORY_DAYS if args.backfill else 5):])
+    need_margin = args.backfill or len(state.get("tse_margin", {})) < 20
+    update_margin_history(state, tdays[-(HISTORY_DAYS if need_margin else 5):])
 
     # 盤中走勢：TSE 以 TWSE 官方 5 秒資料為主，MIS 備援；OTC 使用 MIS
     tse_series, tse_unit = fetch_tse_intraday_twse(day), "億"
@@ -609,6 +703,8 @@ def main():
 
     home["inst_tse"] = build_inst(state, "tse")
     home["inst_otc"] = build_inst(state, "otc")
+    home["margin_tse"] = build_margin(state, "tse")
+    home["margin_otc"] = build_margin(state, "otc")
 
     top = fetch_top(day)
     if not top and args.backfill:
@@ -624,9 +720,11 @@ def main():
 
     for k in ("tse_idx", "otc_idx", "tse_mkt", "otc_mkt"):
         prune(state[k], 400)
-    for k in ("tse_inst", "otc_inst"):
-        prune(state[k], HISTORY_DAYS + 20)
+    for k in ("tse_inst", "otc_inst", "tse_margin", "otc_margin"):
+        prune(state.setdefault(k, {}), HISTORY_DAYS + 20)
 
+    if scheduled:
+        state["done_slots"] = (state.get("done_slots", []) + [slot])[-20:]
     save_json(STATE_FILE, encrypt_json(state, key))
     save_json(OUT_FILE, encrypt_json(home, key))
     print("完成：", OUT_FILE)

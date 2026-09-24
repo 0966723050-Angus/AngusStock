@@ -481,3 +481,17 @@ a.action-btn { text-decoration: none; }
 .ta-info b { color: var(--text); font-weight: 700; }
 .ta-info b.up { color: var(--up); }
 .ta-info b.down { color: var(--down); }
+
+/* 融資融券資訊列 */
+.mg-info { min-height: 44px; align-items: center; }
+.mg-info .mg-date { font-weight: 700; color: var(--text); }
+.mg-info b.up { color: var(--up); } .mg-info b.down { color: var(--down); }
+@media (max-width: 520px) {
+  .mg-tbl { table-layout: fixed; width: 100%; }
+  .mg-tbl th, .mg-tbl td { padding: 7px 2px; font-size: 12px; white-space: normal; word-break: keep-all; }
+  .mg-tbl th:nth-child(1), .mg-tbl td:nth-child(1) { width: 21%; }
+  .mg-tbl th:nth-child(2), .mg-tbl td:nth-child(2) { width: 21%; }
+  .mg-tbl th:nth-child(3), .mg-tbl td:nth-child(3) { width: 18%; }
+  .mg-tbl th:nth-child(4), .mg-tbl td:nth-child(4) { width: 17%; }
+  .mg-tbl th:nth-child(5), .mg-tbl td:nth-child(5) { width: 23%; }
+}

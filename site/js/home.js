@@ -1,4 +1,4 @@
-/* 首頁：大盤指數、三大法人買賣超統計、法人買賣超排行 */
+/* 首頁：大盤指數、融資融券統計、三大法人買賣超統計、法人買賣超排行 */
 (function () {
   "use strict";
 
@@ -211,6 +211,86 @@
     });
   }
 
+  // ------------------------------------------------------------ 融資融券
+  const MG = { amt: "#f08a24", short: "#2e9e3e", ratio: "#e53935" };
+  const wan = (v) => (v == null ? "--" : v >= 1e4 ? +(v / 1e4).toFixed(1) + "萬" : fmt(v, 0));
+  const arrow = (v, d, unit = "") => (v == null ? "" : `<b class="${cls(v)}">(${v > 0 ? "▲" : v < 0 ? "▼" : ""}${fmt(Math.abs(v), d)}${unit})</b>`);
+  // 以「→」後的當前狀態決定顏色：增＝紅、減＝綠
+  const streakCls = (t) => { const cur = String(t).split("→").pop(); return cur.includes("增") ? "up" : cur.includes("減") ? "down" : ""; };
+
+  // 圖表上方資訊列：日期、券餘、資餘、券資比（點選圖表時更新）
+  function marginInfo(d, i) {
+    const s = d.series, r = s[i], p = i > 0 ? s[i - 1] : null;
+    return `<span class="mg-date">${r[0].replace(/-/g, "/")}</span>` +
+      `<span class="chip"><i class="dot" style="background:${MG.short}"></i>券餘 <b>${wan(r[2])}張</b> ${p ? arrow(r[2] - p[2], 0) : ""}</span>` +
+      `<span class="chip"><i class="dot" style="background:${MG.amt}"></i>資餘 <b>${fmt(r[1], 0)}億元</b> ${p ? arrow(r[1] - p[1], 1, "億") : ""}</span>` +
+      `<span class="chip"><i class="dot" style="background:${MG.ratio}"></i>券資比 <b>${fmt(r[3])}%</b> ${p && r[3] != null && p[3] != null ? arrow(r[3] - p[3], 2) : ""}</span>`;
+  }
+
+  function marginCard(label, mkt, d) {
+    if (!d) return `<article class="card"><div class="card-head"><h3>${label}</h3></div><div class="empty">尚無資料</div></article>`;
+    const tr = (name, r, d0, unit) => `
+      <tr>
+        <td class="c">${name}</td>
+        <td class="num">${fmt(r.bal, d0)}</td>
+        <td class="num ${cls(r.chg)}">${sgn(r.chg, d0)}</td>
+        <td class="num ${cls(r.pct)}">${r.pct == null ? "--" : sgn(r.pct) + "%"}</td>
+        <td class="c ${streakCls(r.streak)}">${r.streak}</td>
+      </tr>`;
+    return `
+    <article class="card">
+      <div class="card-head"><h3>${label}</h3><span class="muted small">資料日 ${d.date}</span></div>
+      <div class="card-body">
+        <div class="chips mg-info" data-mg="${mkt}">${marginInfo(d, d.series.length - 1)}</div>
+        <div class="chart tall" data-margin="${mkt}"></div>
+        <div class="tbl-wrap">
+          <table class="tbl mg-tbl">
+            <thead><tr><th>項目</th><th>餘額</th><th>增減</th><th>增減率</th><th>連續增減</th></tr></thead>
+            <tbody>
+              ${tr("融資(億元)", d.fin, 2)}
+              ${tr("融券(張)", d.short, 0)}
+              <tr><td class="c">券資比</td><td class="num">${fmt(d.ratio)}%</td><td class="num ${cls(d.ratio_chg)}">${sgn(d.ratio_chg)}</td><td class="num">--</td><td class="c">--</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </article>`;
+  }
+
+  function drawMarginChart(el, d, box) {
+    if (!el || !d || !d.series.length) return;
+    const dates = d.series.map((r) => r[0]);
+    const amt = d.series.map((r) => r[1]), short = d.series.map((r) => r[2]), ratio = d.series.map((r) => r[3]);
+    const start = Math.max(0, 100 - (55 / dates.length) * 100);
+    const ln = (name, data, color, x, y) => ({ name, type: "line", data, xAxisIndex: x, yAxisIndex: y, symbol: "none", showSymbol: false,
+      emphasis: { disabled: true }, smooth: false, lineStyle: { width: 1.6, color }, itemStyle: { color } });
+    const c = mkChart(el);
+    c.setOption({
+      animation: false,
+      grid: [{ left: 8, right: 8, top: 10, height: "56%", containLabel: true }, { left: 8, right: 8, top: "70%", bottom: 46, containLabel: true }],
+      axisPointer: { link: [{ xAxisIndex: "all" }] },
+      tooltip: { trigger: "axis", showContent: false, axisPointer: { type: "line", lineStyle: { color: css("--muted"), type: "dashed" } } },
+      dataZoom: [{ type: "slider", xAxisIndex: [0, 1], start, end: 100, height: 18, bottom: 4, borderColor: css("--border"), brushSelect: false,
+        textStyle: baseText(), fillerColor: "rgba(85,152,231,.15)" }],
+      xAxis: [
+        { type: "category", data: dates, gridIndex: 0, axisLabel: { show: false }, axisTick: { show: false }, axisLine: { lineStyle: { color: css("--border") } } },
+        { type: "category", data: dates, gridIndex: 1, axisLabel: { ...baseText(), formatter: (v) => v.slice(5).replace("-", "/") }, axisTick: { show: false }, axisLine: { lineStyle: { color: css("--border") } } },
+      ],
+      yAxis: [
+        { type: "value", gridIndex: 0, position: "left", scale: true, splitNumber: 4, axisLabel: { ...baseText(), color: MG.short, formatter: (v) => wan(v) }, splitLine: { lineStyle: { color: css("--grid") } } },
+        { type: "value", gridIndex: 0, position: "right", scale: true, splitNumber: 4, axisLabel: { ...baseText(), color: MG.amt, formatter: (v) => fmt(v, 0) + "億" }, splitLine: { show: false } },
+        { type: "value", gridIndex: 1, position: "right", scale: true, splitNumber: 2, axisLabel: { ...baseText(), color: MG.ratio, formatter: (v) => v.toFixed(2) + "%" }, splitLine: { lineStyle: { color: css("--grid") } } },
+      ],
+      series: [ln("券餘", short, MG.short, 0, 0), ln("資餘", amt, MG.amt, 0, 1), ln("券資比", ratio, MG.ratio, 1, 2)],
+    });
+    const last = dates.length - 1;
+    c.on("updateAxisPointer", (e) => {
+      const ax = (e.axesInfo || []).find((a) => a.axisDim === "x");
+      if (ax && ax.value != null && box) box.innerHTML = marginInfo(d, Math.max(0, Math.min(last, ax.value)));
+    });
+    c.getZr().on("globalout", () => { if (box) box.innerHTML = marginInfo(d, last); });
+  }
+
   // ------------------------------------------------------------ 排行
   const RANK = [
     ["f_buy", "外資買超", "buy"], ["t_buy", "投信買超", "buy"], ["d_buy", "自營商買超", "buy"],
@@ -267,6 +347,12 @@
         ${indexCard("櫃買指數", d.otc)}
       </div>
 
+      <div class="section-title"><h2>融資融券統計</h2><span class="muted small">融資：億元｜融券：張｜券資比 = 融券 ÷ 融資（張）</span></div>
+      <div class="grid-2 stack">
+        ${marginCard("上市融資融券", "tse", d.margin_tse)}
+        ${marginCard("上櫃融資融券", "otc", d.margin_otc)}
+      </div>
+
       <div class="section-title"><h2>三大法人買賣超統計</h2></div>
       <div class="grid-2 stack">
         ${instCard("上市三大法人", "tse", d.inst_tse)}
@@ -278,6 +364,8 @@
     `;
     drawIndexChart(view.querySelector('[data-chart="加權指數"]'), d.tse || {});
     drawIndexChart(view.querySelector('[data-chart="櫃買指數"]'), d.otc || {});
+    drawMarginChart(view.querySelector('[data-margin="tse"]'), d.margin_tse, view.querySelector('[data-mg="tse"]'));
+    drawMarginChart(view.querySelector('[data-margin="otc"]'), d.margin_otc, view.querySelector('[data-mg="otc"]'));
     drawInstChart(view.querySelector('[data-inst="tse"]'), d.inst_tse);
     drawInstChart(view.querySelector('[data-inst="otc"]'), d.inst_otc);
 
