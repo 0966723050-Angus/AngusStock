@@ -137,9 +137,11 @@
   const LINES = [
     { key: "up", label: "上布林" }, { key: "lo", label: "下布林" }, { key: "ma5", label: "MA5" }, { key: "ma10", label: "MA10" },
     { key: "ma20", label: "MA20" }, { key: "ma50", label: "MA50" }, { key: "sarUp", label: "SAR多" }, { key: "sarDn", label: "SAR空" }, { key: "ema", label: "EMA" },
+    { key: "vp", label: "成交量分佈" },
   ];
   function loadOverlays() {
-    try { return { ...Object.fromEntries(LINES.map((x) => [x.key, true])), ...JSON.parse(localStorage.getItem(OPT_KEY) || "{}") }; } catch (e) { return Object.fromEntries(LINES.map((x) => [x.key, true])); }
+    const def = Object.fromEntries(LINES.map((x) => [x.key, x.key !== "vp"])); // 成交量分佈預設不顯示
+    try { return { ...def, ...JSON.parse(localStorage.getItem(OPT_KEY) || "{}") }; } catch (e) { return def; }
   }
 
   const palette = () => ({
@@ -210,6 +212,10 @@
     if (ov.lo) S.push(line("下布林", t.boll.lo, P.boll, { lineStyle: { type: "dotted", width: 1.4 } }));
     if (ov.sarUp) S.push(line("SAR多", t.sarUp, P.sarUp, { smooth: false, lineStyle: { width: 1.5 } }));
     if (ov.sarDn) S.push(line("SAR空", t.sarDn, P.sarDn, { smooth: false, lineStyle: { width: 1.5 } }));
+    if (ov.vp && window.VP) {
+      const n = t.d.length;
+      S.push(...VP.attach(c, t, VP.load, Math.max(0, n - span), n - 1, (v) => fmt(v, v >= 100 ? 1 : 2)));
+    }
     S.push({ name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, barWidth: "70%", barMaxWidth: 18,
       data: t.v.map((v, i) => ({ value: v, itemStyle: { color: volColor(i) } })) });
     S.push(line("量MA5", t.vma5, P.vma, { xAxisIndex: 1, yAxisIndex: 1, smooth: true, lineStyle: { width: 1.2 } }));
@@ -364,7 +370,8 @@
           </div>
           <div class="ta-info" data-for="0"></div>
           <div class="chart ta-k" id="taK"></div>
-          <div class="ta-checks">${LINES.map((x) => `<label><input type="checkbox" data-k="${x.key}" ${ov[x.key] ? "checked" : ""}> ${x.label}</label>`).join("")}</div>
+          <div class="ta-checks">${LINES.map((x) => `<label><input type="checkbox" data-k="${x.key}" ${ov[x.key] ? "checked" : ""}> ${x.label}</label>` +
+            (x.key === "vp" ? '<button type="button" class="vp-gear" aria-label="成交量分佈參數設定">⚙ 設定</button>' : "")).join("")}</div>
         </article>
       </div>
       <div class="ta-subs">
@@ -452,18 +459,25 @@
     draw();
 
     view.querySelector("#taStock").addEventListener("change", (e) => { location.hash = `#/tech?code=${encodeURIComponent(e.target.value)}`; });
-    view.querySelector(".ta-checks").addEventListener("change", (e) => {
-      const k = e.target.dataset.k;
-      if (!k) return;
-      ov[k] = e.target.checked;
-      try { localStorage.setItem(OPT_KEY, JSON.stringify(ov)); } catch (err) { /* ignore */ }
+    const redrawK = () => {
       const cur = charts[0].getOption().dataZoom[0];
       span = cur.endValue - cur.startValue + 1;
       charts[0].dispose(); charts[0] = klineChart(kEl, t, meta, ov, span);
       charts[0].dispatchAction({ type: "dataZoom", startValue: cur.startValue, endValue: cur.endValue });
       echarts.connect(GROUP);
       bindInfo();
+    };
+    view.querySelector(".ta-checks").addEventListener("change", (e) => {
+      const k = e.target.dataset.k;
+      if (!k) return;
+      ov[k] = e.target.checked;
+      try { localStorage.setItem(OPT_KEY, JSON.stringify(ov)); } catch (err) { /* ignore */ }
+      redrawK();
     });
+    view.querySelector(".vp-gear").addEventListener("click", () => VP.openSettings(() => {
+      if (!ov.vp) { ov.vp = true; view.querySelector('[data-k="vp"]').checked = true; try { localStorage.setItem(OPT_KEY, JSON.stringify(ov)); } catch (err) { /* ignore */ } }
+      redrawK();
+    }));
     view.querySelector(".ta-zoom").addEventListener("click", (e) => {
       const z = e.target.closest("[data-z]")?.dataset.z;
       if (!z) return;

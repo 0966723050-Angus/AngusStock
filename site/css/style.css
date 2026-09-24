@@ -495,3 +495,15 @@ a.action-btn { text-decoration: none; }
   .mg-tbl th:nth-child(4), .mg-tbl td:nth-child(4) { width: 17%; }
   .mg-tbl th:nth-child(5), .mg-tbl td:nth-child(5) { width: 23%; }
 }
+
+/* 成交量分佈：設定鈕與設定畫面 */
+.vp-gear { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; padding: 2px 10px; font-size: 13px; cursor: pointer; margin-left: -6px; }
+.vp-form { list-style: none; margin: 0 auto; padding: 0; max-width: 720px; background: var(--surface); }
+.vp-form .vp-sec { padding: 14px 16px 6px; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--bg); letter-spacing: .5px; }
+.vp-form .vp-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 52px; padding: 6px 16px; border-bottom: 1px solid var(--border); font-size: 15px; }
+.vp-form .vp-row label { display: inline-flex; align-items: center; gap: 8px; }
+.vp-form .vp-ctl { display: inline-flex; gap: 8px; align-items: center; flex: none; }
+.vp-form input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
+.vp-form input[type=color] { width: 40px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; }
+.vp-form input[type=number] { width: 72px; font: inherit; font-size: 16px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); }
+.vp-form select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); max-width: 190px; }
