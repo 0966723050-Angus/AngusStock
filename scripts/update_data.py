@@ -25,6 +25,11 @@ TZ = dt.timezone(dt.timedelta(hours=8), "Asia/Taipei")  # 台灣無日光節約�
 ROOT = Path(__file__).resolve().parents[1]
 STATE_FILE = ROOT / "state" / "history.enc.json"
 OUT_FILE = ROOT / "site" / "data" / "home.enc.json"
+WATCH_FILE = ROOT / "site" / "data" / "watchlist.enc.json"
+QUOTES_FILE = ROOT / "site" / "data" / "quotes.enc.json"
+INDEX_ITEMS = {"t00": ("加權指數", "tse"), "o00": ("櫃買指數", "otc")}
+DEFAULT_WATCH = ["t00", "2330", "3105", "8150", "6182", "2409", "3481", "2313",
+                 "6239", "2408", "2344", "2421", "2481"]
 HISTORY_DAYS = 130  # 法人買賣超圖表保留的交易日數
 
 S = requests.Session()
@@ -461,17 +466,103 @@ def build_inst(state, mkt):
     return {"date": dates[-1], "rows": rows, "series": series}
 
 
+# ---------------------------------------------------------------- 自選股
+def fetch_all_quotes():
+    """上市 + 上櫃全部股票/ETF 最近一日收盤（OpenAPI）。回傳 {code: [名稱, 市場, 收盤, 漲跌, 最高, 最低, 張數, 昨收, 日期]}"""
+    rows = {}
+    ok_code = re.compile(r"^(\d{4}|00\d{2,4}[A-Z]?)$")
+    j = get_json("https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL") or []
+    for r in j:
+        code = r.get("Code", "").strip()
+        if not ok_code.match(code):
+            continue
+        c, ch = num(r.get("ClosingPrice")), num(r.get("Change"))
+        rows[code] = [r.get("Name", "").strip(), "tse", c, ch, num(r.get("HighestPrice")), num(r.get("LowestPrice")),
+                      round((num(r.get("TradeVolume")) or 0) / 1000), None if c is None or ch is None else round(c - ch, 2),
+                      roc_to_iso(r["Date"][:3] + "/" + r["Date"][3:5] + "/" + r["Date"][5:]) if r.get("Date") else None]
+    polite()
+    j = get_json("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes") or []
+    for r in j:
+        code = r.get("SecuritiesCompanyCode", "").strip()
+        if not ok_code.match(code):
+            continue
+        c, ch = num(r.get("Close")), num(r.get("Change"))
+        rows[code] = [r.get("CompanyName", "").strip(), "otc", c, ch, num(r.get("High")), num(r.get("Low")),
+                      round((num(r.get("TradingShares")) or 0) / 1000), None if c is None or ch is None else round(c - ch, 2),
+                      roc_to_iso(r["Date"][:3] + "/" + r["Date"][3:5] + "/" + r["Date"][5:]) if r.get("Date") else None]
+    return rows
+
+
+def fetch_mis_quotes(codes, markets):
+    """MIS 最新報價（盤中/收盤）。回傳格式同 fetch_all_quotes"""
+    chans = []
+    for c in codes:
+        if c in INDEX_ITEMS:
+            chans.append(f"{INDEX_ITEMS[c][1]}_{c}.tw")
+        elif markets.get(c):
+            chans.append(f"{markets[c]}_{c}.tw")
+    out = {}
+    for i in range(0, len(chans), 40):
+        j = get_json("https://mis.twse.com.tw/stock/api/getStockInfo.jsp",
+                     {"ex_ch": "|".join(chans[i:i + 40]), "json": 1, "delay": 0})
+        polite()
+        for m in (j or {}).get("msgArray", []):
+            code = m.get("c")
+            y = num(m.get("y"))
+            price = num(m.get("z"))
+            if price is None:  # 最近一筆未成交：以買價近似
+                price = num((m.get("b") or "").split("_")[0])
+            if price is None or y is None:
+                continue
+            d = m.get("d", "")
+            name = INDEX_ITEMS[code][0] if code in INDEX_ITEMS else m.get("n", "")
+            vol = None if code in INDEX_ITEMS else int(num(m.get("v")) or 0)
+            out[code] = [name, m.get("ex", ""), price, round(price - y, 2), num(m.get("h")), num(m.get("l")),
+                         vol, y, f"{d[:4]}-{d[4:6]}-{d[6:]}" if len(d) == 8 else None]
+    return out
+
+
+def update_watch(key, blob_text=None):
+    """更新自選股清單（若有新清單）與報價檔"""
+    if blob_text:
+        blob = json.loads(blob_text)
+        wl = decrypt_json(blob, key)  # 驗證可解密且格式正確
+        if not isinstance(wl.get("items"), list):
+            raise ValueError("自選股清單格式錯誤")
+        save_json(WATCH_FILE, blob)
+        print(f"  已儲存自選股清單（{len(wl['items'])} 檔）")
+    items = DEFAULT_WATCH
+    if WATCH_FILE.exists():
+        items = decrypt_json(json.loads(WATCH_FILE.read_text("utf-8")), key).get("items") or DEFAULT_WATCH
+    rows = fetch_all_quotes()
+    polite()
+    live = fetch_mis_quotes(items, {c: v[1] for c, v in rows.items()})
+    rows.update(live)
+    for code, (name, _) in INDEX_ITEMS.items():  # 指數無論是否即時取得都可搜尋
+        rows.setdefault(code, [name, "idx", None, None, None, None, None, None, None])
+    now = dt.datetime.now(TZ)
+    save_json(QUOTES_FILE, encrypt_json({"updated": now.strftime("%Y-%m-%d %H:%M"), "rows": rows}, key))
+    print(f"  報價已更新：全市場 {len(rows)} 檔，自選即時 {len(live)} 檔")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--backfill", action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--date", help="指定日期 YYYY-MM-DD（測試用）")
+    ap.add_argument("--watch-only", action="store_true", help="只更新自選股清單與報價")
     args = ap.parse_args()
 
     key = data_key()
     now = dt.datetime.now(TZ)
     day = dt.date.fromisoformat(args.date) if args.date else now.date()
     print(f"執行時間 {now:%Y-%m-%d %H:%M}，資料日 {day}")
+
+    watch_blob = os.environ.get("WATCHLIST_BLOB", "").strip() or None
+    if args.watch_only or watch_blob:
+        update_watch(key, watch_blob)
+        if args.watch_only:
+            return
 
     if not (args.force or args.backfill) and not is_trading_day(day):
         print("今日未開盤，不更新。")
@@ -530,6 +621,8 @@ def main():
     save_json(STATE_FILE, encrypt_json(state, key))
     save_json(OUT_FILE, encrypt_json(home, key))
     print("完成：", OUT_FILE)
+    if not watch_blob:
+        update_watch(key)
 
 
 if __name__ == "__main__":

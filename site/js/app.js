@@ -23,7 +23,14 @@
   let rawKeyB64 = null;
 
   async function importDataKey(rawB64) {
-    return crypto.subtle.importKey("raw", b64(rawB64), { name: "AES-GCM" }, false, ["decrypt"]);
+    return crypto.subtle.importKey("raw", b64(rawB64), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  }
+
+  // 以資料金鑰加密（格式與 Python 端相同：密文 + 16 bytes tag）
+  async function encryptJSON(obj) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, dataKey, new TextEncoder().encode(JSON.stringify(obj)));
+    return { v: 1, iv: toB64(iv), ct: toB64(ct) };
   }
 
   async function unwrap(user, pwd) {
@@ -86,6 +93,7 @@
     const id = (location.hash.replace(/^#\/?/, "") || pages[0].id).split("?")[0];
     const page = pages.find((p) => p.id === id) || pages[0];
     current = page;
+    $("#pageAction").innerHTML = "";
     $("#pageTitle").textContent = page.title;
     document.title = page.title + "｜Angus 股市";
     document.querySelectorAll("#menuList a").forEach((a) => a.classList.toggle("active", a.dataset.id === page.id));
@@ -154,8 +162,10 @@
     if (run.conclusion !== "success") throw new Error("更新失敗（" + run.conclusion + "）");
   }
 
-  async function runUpdate(resumeSince) {
-    if (updating) return;
+  // opts.inputs：傳給 workflow 的參數；opts.resume：續追先前送出的執行
+  async function runUpdate(opts = {}) {
+    const resumeSince = opts.resume;
+    if (updating) { toast("已有更新在進行中，請稍候"); return false; }
     updating = true;
     const btn = $("#updateBtn");
     btn.disabled = true;
@@ -171,7 +181,7 @@
         await gh(cfg, `/actions/workflows/${cfg.workflow}/dispatches`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ref: "main", inputs: { force: "true" } }),
+          body: JSON.stringify({ ref: "main", inputs: opts.inputs || { force: "true" } }),
         });
         try { sessionStorage.setItem(RUN_STORE, String(since)); } catch (e) { /* ignore */ }
       }
@@ -181,9 +191,11 @@
       await route();
       bar("資料已更新完成", "ok");
       setTimeout(() => bar(""), 4000);
+      return true;
     } catch (e) {
       bar(e.message || String(e), "err");
       setTimeout(() => bar(""), 8000);
+      return false;
     } finally {
       try { sessionStorage.removeItem(RUN_STORE); } catch (e) { /* ignore */ }
       updating = false;
@@ -206,7 +218,7 @@
     // 若更新進行中時重新整理了頁面，繼續追蹤
     let pending = null;
     try { pending = sessionStorage.getItem(RUN_STORE); } catch (e) { /* ignore */ }
-    if (pending) runUpdate(Number(pending));
+    if (pending) runUpdate({ resume: Number(pending) });
   }
 
   async function onLogin(e) {
@@ -266,5 +278,8 @@
     showLogin();
   }
 
-  window.App = { start, register, upcoming: upcomingItem, loadData, toast, setUpdated: (t) => { $("#drawerUpdated").textContent = t ? "資料更新：" + t : ""; } };
+  window.App = {
+    start, register, upcoming: upcomingItem, loadData, encryptJSON, toast, bar,
+    runUpdate, isUpdating: () => updating,
+    setAction: (el) => { const a = $("#pageAction"); a.innerHTML = ""; if (el) a.appendChild(el); }, setUpdated: (t) => { $("#drawerUpdated").textContent = t ? "資料更新：" + t : ""; } };
 })();

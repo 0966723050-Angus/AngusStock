@@ -7,13 +7,17 @@ on:
     - cron: "0 14 * * 1-5"
   push:
     branches: [main]
-    paths-ignore: ["state/**", "site/data/home.enc.json"]
+    paths-ignore: ["state/**", "site/data/home.enc.json", "site/data/quotes.enc.json", "site/data/watchlist.enc.json"]
   workflow_dispatch:
     inputs:
       force:
         description: "不檢查是否開盤，強制更新"
         type: boolean
         default: false
+      watchlist:
+        description: "自選股清單（網頁加密後傳入，勿手動填寫）"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -37,7 +41,13 @@ jobs:
       - name: 抓取資料
         env:
           DATA_KEY: ${{ secrets.DATA_KEY }}
-        run: python scripts/update_data.py ${{ inputs.force && '--force' || '' }}
+          WATCHLIST_BLOB: ${{ inputs.watchlist }}
+        run: |
+          if [ -n "$WATCHLIST_BLOB" ]; then
+            python scripts/update_data.py --watch-only
+          else
+            python scripts/update_data.py ${{ inputs.force && '--force' || '' }}
+          fi
       - name: 提交資料
         run: |
           git config user.name "github-actions[bot]"

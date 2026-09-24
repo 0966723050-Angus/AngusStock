@@ -1,15 +1,17 @@
 /* Service Worker：App 殼層快取優先，資料一律走網路 */
-const CACHE = "angus-stock-v3";
+const CACHE = "angus-stock-v4";
 const SHELL = [
   "./",
   "index.html",
-  "css/style.css?v=3",
-  "js/app.js?v=3",
-  "js/home.js?v=3",
+  "css/style.css?v=4",
+  "js/app.js?v=4",
+  "js/home.js?v=4",
+  "js/watch.js?v=4",
   "manifest.webmanifest",
   "icons/icon-192.png",
   "icons/icon-512.png",
   "https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js",
+  "https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js",
 ];
 
 self.addEventListener("install", (e) => {

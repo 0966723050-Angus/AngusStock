@@ -297,5 +297,5 @@
   });
 
   App.register({ id: "home", title: "首頁", icon: "🏠", render });
-  App.upcoming("個股技術指標");
+  App.upcoming("個股資訊");
 })();
