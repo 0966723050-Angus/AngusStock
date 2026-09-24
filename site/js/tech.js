@@ -97,9 +97,14 @@
       l = rows.map((r) => r[3]), c = rows.map((r) => r[4]), v = rows.map((r) => r[5]);
     const e13 = TA.ema(c, 13);
     const s = TA.sar(h, l, c);
+    // DMA：SMA20 向後位移 5 日；AMA = 收盤 − DMA；另計 AMA 的 5 日平均
+    const ma20 = TA.sma(c, 20);
+    const dma = c.map((_, i) => (i >= 5 ? ma20[i - 5] : null));
+    const ama = c.map((x, i) => (dma[i] == null ? null : x - dma[i]));
+    const amaMa5 = ama.map((_, i) => (i >= 4 && ama.slice(i - 4, i + 1).every((x) => x != null) ? ama.slice(i - 4, i + 1).reduce((a, b) => a + b, 0) / 5 : null));
     return {
       d, o, h, l, c, v,
-      ma5: TA.sma(c, 5), ma10: TA.sma(c, 10), ma20: TA.sma(c, 20), ma60: TA.sma(c, 60), ma120: TA.sma(c, 120),
+      ma5: TA.sma(c, 5), ma10: TA.sma(c, 10), ma20, ma50: TA.sma(c, 50), ma100: TA.sma(c, 100), dma, ama, amaMa5,
       vma5: TA.sma(v, 5), e12: TA.ema(c, 12), e26: TA.ema(c, 26), e13,
       boll: TA.boll(c), macd: TA.macd(c), kd: TA.kd(h, l, c), rsi6: TA.rsi(c, 6), rsi12: TA.rsi(c, 12),
       sarUp: s.sar.map((x, i) => (s.up[i] ? x : null)), sarDn: s.sar.map((x, i) => (s.up[i] === false ? x : null)),
@@ -131,7 +136,7 @@
   // ------------------------------------------------------------ 圖表
   const LINES = [
     { key: "up", label: "上布林" }, { key: "lo", label: "下布林" }, { key: "ma5", label: "MA5" }, { key: "ma10", label: "MA10" },
-    { key: "ma20", label: "MA20" }, { key: "ma60", label: "MA60" }, { key: "sarUp", label: "SAR多" }, { key: "sarDn", label: "SAR空" }, { key: "ema", label: "EMA" },
+    { key: "ma20", label: "MA20" }, { key: "ma50", label: "MA50" }, { key: "sarUp", label: "SAR多" }, { key: "sarDn", label: "SAR空" }, { key: "ema", label: "EMA" },
   ];
   function loadOverlays() {
     try { return { ...Object.fromEntries(LINES.map((x) => [x.key, true])), ...JSON.parse(localStorage.getItem(OPT_KEY) || "{}") }; } catch (e) { return Object.fromEntries(LINES.map((x) => [x.key, true])); }
@@ -139,7 +144,7 @@
 
   const palette = () => ({
     up: css("--up"), down: css("--down"), text: css("--muted"), grid: css("--grid"), border: css("--border"),
-    ma5: "#7b7bf0", ma10: "#3fc8e8", ma20: "#e8b64a", ma60: "#cf6fcf", ema: css("--ta-ema") || "#0b3d2e",
+    ma5: "#7b7bf0", ma10: "#3fc8e8", ma20: "#e8b64a", ma50: "#cf6fcf", ema: css("--ta-ema") || "#0b3d2e",
     boll: "#ef5fa0", sarUp: "#ff2a2a", sarDn: "#22c55e", vma: "#2250e0", dif: "#2d3be0", sig: "#f08a4b",
   });
 
@@ -180,7 +185,7 @@
     if (ov.ma5) S.push(line("MA5", t.ma5, P.ma5));
     if (ov.ma10) S.push(line("MA10", t.ma10, P.ma10));
     if (ov.ma20) S.push(line("MA20", t.ma20, P.ma20));
-    if (ov.ma60) S.push(line("MA60", t.ma60, P.ma60));
+    if (ov.ma50) S.push(line("MA50", t.ma50, P.ma50));
     if (ov.ema) S.push(line("EMA13", t.e13, P.ema, { lineStyle: { width: 2.4 } }));
     if (ov.up) S.push(line("上布林", t.boll.up, P.boll, { lineStyle: { type: "dotted", width: 2 } }));
     if (ov.lo) S.push(line("下布林", t.boll.lo, P.boll, { lineStyle: { type: "dotted", width: 2 } }));
@@ -191,7 +196,7 @@
     S.push(line("量MA5", t.vma5, P.vma, { xAxisIndex: 1, yAxisIndex: 1, smooth: true, lineStyle: { width: 1.6 } }));
     c.setOption(baseOpt(t, P, {
       legend: { top: 4, left: 8, itemWidth: 16, itemHeight: 8, textStyle: { color: css("--text-2"), fontSize: 11 },
-        data: ["MA5", "MA10", "MA20", "MA60", "EMA13"].filter((x) => S.some((s) => s.name === x)) },
+        data: ["MA5", "MA10", "MA20", "MA50", "EMA13"].filter((x) => S.some((s) => s.name === x)) },
       grid: [{ left: 8, right: 52, top: 34, height: "58%" }, { left: 8, right: 52, top: "73%", bottom: 50 }],
       xAxis: [xCat(t, P, 0, false), xCat(t, P, 1, true)],
       yAxis: [yVal(P), yVal(P, { gridIndex: 1, splitNumber: 2, axisLabel: { color: P.text, fontSize: 10, formatter: (v) => (v >= 1e4 ? +(v / 1e4).toFixed(1) + "萬" : v) } })],
@@ -216,9 +221,9 @@
     const { series, yAxis = {}, marks, legend } = build(P);
     c.setOption(baseOpt(t, P, {
       legend: legend ? { top: 2, left: 8, itemWidth: 16, itemHeight: 8, textStyle: { color: css("--text-2"), fontSize: 11 } } : undefined,
-      grid: { left: 8, right: 52, top: legend ? 28 : 14, bottom: 26 },
+      grid: { left: Array.isArray(yAxis) ? 48 : 8, right: 52, top: legend ? 28 : 14, bottom: 26 },
       xAxis: xCat(t, P),
-      yAxis: yVal(P, yAxis),
+      yAxis: Array.isArray(yAxis) ? yAxis.map((y) => yVal(P, y)) : yVal(P, yAxis),
       dataZoom: zoomOpt(t, span, false),
       series: series.concat(marks ? [{ type: "line", data: [], markLine: { silent: true, symbol: "none", label: { show: false }, data: marks } }] : []),
       tooltip: { ...baseOpt(t, P, {}).tooltip, axisPointer: { type: "line" },
@@ -238,38 +243,35 @@
     const turnover = meta.shares && meta.market !== "idx" ? (t.v[i] * 1000 / meta.shares) * 100 : null;
     const r = (label, cls, a, bb = "", c2 = "") => `<tr><th class="${cls}">${label}</th><td class="${c2}">${a}</td><td>${bb}</td></tr>`;
     const sg = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
+    // 依今日數值由大到小排列（無值者置底）
+    const sorted = (rows) => rows.slice().sort((x, y) => (y.v ?? -Infinity) - (x.v ?? -Infinity)).map((x) => x.html).join("");
+    const item = (v, label, cls, bb = "", c2 = "") => ({ v, html: r(label, cls, fmt(v), bb, c2) });
+    const posTxt = pos == null ? "" : `<b class="${sg(pos)}">${fmt(pos, 0)}%</b>`;
     return `
       <table class="ta-tbl">
         <thead><tr><th class="ta-date">${esc(t.d[i])}</th><th>今日</th><th>前日</th></tr></thead>
         <tbody>
-          ${r("MACD-快", "m1", fmt(t.macd.dif[i]), "", sg(t.macd.dif[i]))}
-          ${r("MACD-慢", "m2", fmt(t.macd.sig[i]), "", sg(t.macd.sig[i]))}
+          ${sorted([item(t.macd.dif[i], "MACD-快", "m1", "", sg(t.macd.dif[i])), item(t.macd.sig[i], "MACD-慢", "m2", "", sg(t.macd.sig[i]))])}
           ${r("柱狀體", "m3", fmt(t.macd.hist[i]), fmt(t.macd.hist[p]))}
           ${r("K-快", "k1", fmt(t.kd.k[i]))}
           ${r("D-慢", "k2", fmt(t.kd.d[i]))}
           ${r("J", "k3", fmt(t.kd.j[i]), fmt(t.kd.j[p]))}
-          ${r("RSI-快", "r1", fmt(t.rsi6[i]))}
-          ${r("RSI-慢", "r2", fmt(t.rsi12[i]))}
+          ${sorted([item(t.rsi6[i], "RSI-快", "r1"), item(t.rsi12[i], "RSI-慢", "r2")])}
           <tr class="gap"><td colspan="3"></td></tr>
-          ${r("股價", "p0", fmt(t.c[i]))}
-          ${r("SMA5", "s5", fmt(t.ma5[i]))}
-          ${r("SMA10", "s10", fmt(t.ma10[i]))}
-          ${r("SMA20", "s20", fmt(t.ma20[i]))}
-          ${r("SMA60", "s60", fmt(t.ma60[i]))}
-          ${r("SMA120", "s120", fmt(t.ma120[i]))}
+          ${sorted([item(t.c[i], "股價", "p0"), item(t.ma5[i], "SMA5", "s5"), item(t.ma10[i], "SMA10", "s10"),
+                    item(t.ma20[i], "SMA20", "s20"), item(t.ma50[i], "SMA50", "s60"), item(t.ma100[i], "SMA100", "s120")])}
           ${r("Vol-MA5", "v5", fmt(t.vma5[i], 0))}
           ${r("EMA12", "e1", fmt(t.e12[i]))}
           ${r("EMA26", "e1", fmt(t.e26[i]))}
           ${r("EMA13", "e1", fmt(t.e13[i]))}
           <tr class="gap"><td colspan="3"></td></tr>
-          ${r("上布林", "b1", fmt(b.up[i]))}
-          ${r("股價", "p0", fmt(t.c[i]), pos == null ? "" : `<b class="${sg(pos)}">${fmt(pos, 0)}%</b>`)}
-          ${r("中線", "b2", fmt(b.mid[i]))}
-          ${r("下布林", "b1", fmt(b.lo[i]))}
+          ${sorted([item(b.up[i], "上布林", "b1"), item(t.c[i], "股價", "p0", posTxt), item(b.mid[i], "中線", "b2"), item(b.lo[i], "下布林", "b1")])}
           ${r("標準差", "b3", fmt(b.sd[i]))}
           ${r("BBW", "b3", bbw == null ? "--" : fmt(bbw) + "%")}
           ${r("52週最高價", "w1", fmt(hi52))}
           ${r("52週最低價", "w1", fmt(lo52))}
+          ${r("DMA", "w2", fmt(t.dma[i]))}
+          ${r("AMA", "w2", fmt(t.ama[i]), "", sg(t.ama[i]))}
           ${r("SAR", "w2", fmt(t.sarUp[i] ?? t.sarDn[i]), t.sarUp[i] != null ? '<b class="up">多</b>' : '<b class="down">空</b>')}
           ${r("周轉率", "w2", turnover == null ? "--" : fmt(turnover) + "%")}
         </tbody>
@@ -340,7 +342,7 @@
         ${[["MACD", "taMacd"], ["KD", "taKd"], ["J", "taJ"], ["RSI", "taRsi"], ["DMA", "taDma"], ["E-Ray Index", "taEray"]].map(([n, id]) => `
           <article class="card"><div class="chart-title"><span class="tag t1">${n}</span></div><div class="chart ta-sub" id="${id}"></div></article>`).join("")}
       </div>
-      <p class="muted small note">K 線預設顯示近半年，可用 ＋／－ 或下方拖曳條調整區間（所有圖表同步）。EMA 週期 13；布林 20 日 ±2 標準差；KD 9 日；RSI 6／12 日；E-Ray 為 Elder Ray（最高／最低價 − EMA13）。</p>`;
+      <p class="muted small note">K 線預設顯示近半年，可用 ＋／－ 或下方拖曳條調整區間（所有圖表同步）。EMA 週期 13；布林 20 日 ±2 標準差；KD 9 日；RSI 6／12 日；DMA 為 SMA20 向後位移 5 日，AMA = 收盤 − DMA；E-Ray 為 Elder Ray（最高／最低價 − EMA13）。</p>`;
 
     const kEl = view.querySelector("#taK");
     const draw = () => {
@@ -349,7 +351,7 @@
       charts.push(subChart(view.querySelector("#taMacd"), t, span, (P) => ({
         legend: true,
         series: [
-          { name: "柱狀體", type: "bar", barMaxWidth: 8, data: t.macd.hist.map((v, i) => {
+          { name: "柱狀體", type: "bar", barMaxWidth: 8, itemStyle: { color: "#ff2020" }, data: t.macd.hist.map((v, i) => {
             const prev = i > 0 ? t.macd.hist[i - 1] : v;
             const style = v >= 0 ? { color: P.up } : v < prev ? { color: "#2e7d32" } : { color: css("--surface"), borderColor: css("--text-2"), borderWidth: 1 };
             return { value: v, itemStyle: style };
@@ -378,13 +380,21 @@
         ],
         marks: [hline(70, "#e02020"), hline(50, "#1f3fe0"), hline(30, "#d05050")],
       })));
-      const dma = view.querySelector("#taDma");
-      dma.outerHTML = '<div class="empty">DMA 計算式待確認，提供公式後即可加入。</div>';
+      charts.push(subChart(view.querySelector("#taDma"), t, span, (P) => ({
+        legend: true,
+        yAxis: [{ position: "left" }, { position: "right", splitLine: { show: false } }],
+        series: [
+          { name: "AMA", type: "bar", yAxisIndex: 1, barMaxWidth: 8, itemStyle: { color: "#ff2020" }, data: t.ama.map((v) => (v == null ? null : { value: v, itemStyle: { color: v >= 0 ? "#ff2020" : "#18e018" } })) },
+          line("DMA", t.dma, "#f5b800", { lineStyle: { width: 2.2 } }),
+          line("股價", t.c, "#a0309a", { lineStyle: { width: 2 } }),
+          line("AMA 5日均", t.amaMa5, "#1f3fe0", { yAxisIndex: 1, lineStyle: { type: "dotted", width: 2.4 } }),
+        ],
+      })));
       charts.push(subChart(view.querySelector("#taEray"), t, span, (P) => ({
         legend: true,
         series: [
-          { name: "多方力道", type: "bar", barMaxWidth: 8, data: t.bull.map((v) => ({ value: v, itemStyle: { color: v >= 0 ? "#ff2020" : "#0a9f4a" } })) },
-          { name: "空方力道", type: "bar", barGap: "-100%", barMaxWidth: 8, data: t.bear.map((v) => ({ value: v < 0 ? v : null, itemStyle: { color: "#3cf03c" } })) },
+          { name: "多方力道", type: "bar", barMaxWidth: 8, itemStyle: { color: "#ff2020" }, data: t.bull.map((v) => ({ value: v, itemStyle: { color: v >= 0 ? "#ff2020" : "#0a9f4a" } })) },
+          { name: "空方力道", type: "bar", barGap: "-100%", itemStyle: { color: "#3cf03c" }, barMaxWidth: 8, data: t.bear.map((v) => ({ value: v < 0 ? v : null, itemStyle: { color: "#3cf03c" } })) },
         ],
         marks: [hline(0, css("--text"), "solid", 1)],
       })));
