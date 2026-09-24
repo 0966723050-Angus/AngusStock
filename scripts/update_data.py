@@ -522,7 +522,7 @@ def fetch_mis_quotes(codes, markets):
     return out
 
 
-def update_watch(key, blob_text=None):
+def update_watch(key, blob_text=None, full=False):
     """更新自選股清單（若有新清單）與報價檔"""
     if blob_text:
         blob = json.loads(blob_text)
@@ -543,6 +543,14 @@ def update_watch(key, blob_text=None):
     now = dt.datetime.now(TZ)
     save_json(QUOTES_FILE, encrypt_json({"updated": now.strftime("%Y-%m-%d %H:%M"), "rows": rows}, key))
     print(f"  報價已更新：全市場 {len(rows)} 檔，自選即時 {len(live)} 檔")
+    try:
+        import stock_info
+        days = sorted(load_state(key).get("tse_idx", {}))
+        stock_info.build_stocks(key, items, rows, days, refresh_fund=full)
+    except Exception as e:  # noqa: BLE001  個股資訊失敗不影響其他資料
+        import traceback
+        traceback.print_exc()
+        print("  ! 個股資訊更新失敗：", e)
 
 
 def main():
@@ -622,7 +630,7 @@ def main():
     save_json(OUT_FILE, encrypt_json(home, key))
     print("完成：", OUT_FILE)
     if not watch_blob:
-        update_watch(key)
+        update_watch(key, full=True)
 
 
 if __name__ == "__main__":

@@ -74,7 +74,7 @@
   function buildMenu() {
     const ul = $("#menuList");
     ul.innerHTML = "";
-    pages.forEach((p) => {
+    pages.filter((p) => !p.hidden).forEach((p) => {
       const li = document.createElement("li");
       li.innerHTML = `<a href="#/${p.id}" data-id="${p.id}"><span aria-hidden="true">${p.icon || "•"}</span>${p.title}</a>`;
       ul.appendChild(li);
@@ -90,17 +90,20 @@
 
   let current = null;
   async function route() {
-    const id = (location.hash.replace(/^#\/?/, "") || pages[0].id).split("?")[0];
+    const [id0, qs] = (location.hash.replace(/^#\/?/, "") || pages[0].id).split("?");
+    const id = id0;
+    const params = new URLSearchParams(qs || "");
     const page = pages.find((p) => p.id === id) || pages[0];
     current = page;
     $("#pageAction").innerHTML = "";
     $("#pageTitle").textContent = page.title;
     document.title = page.title + "｜Angus 股市";
-    document.querySelectorAll("#menuList a").forEach((a) => a.classList.toggle("active", a.dataset.id === page.id));
+    document.querySelectorAll("#menuList a").forEach((a) => a.classList.toggle("active", a.dataset.id === (page.menu || page.id)));
     const view = $("#view");
     view.innerHTML = '<div class="skeleton"></div>';
     try {
-      await page.render(view);
+      window.scrollTo(0, 0);
+      await page.render(view, params);
     } catch (e) {
       console.error(e);
       if (e && e.name === "OperationError") { // 金鑰已更換，需重新登入

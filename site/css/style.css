@@ -364,3 +364,37 @@ body.no-scroll { overflow: hidden; }
 
 /* 表格各欄一律置中 */
 .tbl th, .tbl td, .tbl td.num, .tbl td.c, .tbl .rk { text-align: center; }
+
+/* ---------- 個股資訊 ---------- */
+.watch-tbl tr.link { cursor: pointer; }
+.watch-tbl tr.link:hover td { background: var(--head); }
+.watch-tbl tr.link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.stock-nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+.stock-nav a { color: var(--accent); text-decoration: none; font-weight: 600; padding: 6px 2px; }
+.stock-nav .pager { display: flex; gap: 16px; font-size: 14px; }
+.stock-grid { display: grid; gap: 16px; grid-template-columns: 1fr; margin-bottom: 8px; }
+@media (min-width: 960px) { .stock-grid { grid-template-columns: 340px minmax(0, 1fr); align-items: start; } .stock-card { position: sticky; top: 68px; } }
+.stock-charts { display: grid; gap: 16px; min-width: 0; }
+.stock-head { padding: 12px 16px; border-bottom: 1px solid var(--border); background: #fffbe0; }
+:root[data-theme="dark"] .stock-head { background: #2c2a1a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .stock-head { background: #2c2a1a; } }
+.stock-name { font-size: 24px; font-weight: 800; color: var(--up); text-decoration: underline; text-underline-offset: 4px; }
+.stock-code { font-size: 22px; font-weight: 700; color: var(--up); margin-left: 16px; }
+.info-tbl { width: 100%; border-collapse: collapse; font-size: 15px; }
+.info-tbl th, .info-tbl td { padding: 7px 14px; border-bottom: 1px solid var(--border); }
+.info-tbl th { text-align: left; font-weight: 600; white-space: nowrap; }
+.info-tbl th a { color: var(--accent); }
+.info-tbl td { text-align: center; font-weight: 700; color: #1f3fbf; }
+:root[data-theme="dark"] .info-tbl td { color: #8fb2ff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .info-tbl td { color: #8fb2ff; } }
+.info-tbl td.up { color: var(--up); } .info-tbl td.down { color: var(--down); }
+.info-tbl td small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+.info-tbl td.hl { background: color-mix(in srgb, var(--up) 18%, transparent); color: var(--up); }
+.info-tbl tr.b1 { background: color-mix(in srgb, #ffe500 22%, transparent); }
+.info-tbl tr.b2 { background: color-mix(in srgb, #b7e24a 22%, transparent); }
+.info-tbl tr.b3 { background: color-mix(in srgb, #3de0c0 20%, transparent); }
+.info-tbl tr.b4 { background: color-mix(in srgb, #d9a6e6 22%, transparent); }
+.chart-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 14px 0; flex-wrap: wrap; }
+.tag { font-size: 17px; font-weight: 800; padding: 2px 10px; border-radius: 4px; color: #111; }
+.tag.t1 { background: #fff200; } .tag.t2 { background: #b6cff0; } .tag.t3 { background: #c7ecc4; }
+.inst-chart { height: 280px; }

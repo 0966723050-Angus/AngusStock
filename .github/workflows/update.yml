@@ -7,7 +7,7 @@ on:
     - cron: "0 14 * * 1-5"
   push:
     branches: [main]
-    paths-ignore: ["state/**", "site/data/home.enc.json", "site/data/quotes.enc.json", "site/data/watchlist.enc.json"]
+    paths-ignore: ["state/**", "site/data/home.enc.json", "site/data/quotes.enc.json", "site/data/watchlist.enc.json", "site/data/stocks.enc.json"]
   workflow_dispatch:
     inputs:
       force:
@@ -38,6 +38,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r scripts/requirements.txt
+      - name: 還原個股資料快取
+        uses: actions/cache/restore@v4
+        with:
+          path: cache
+          key: stock-cache-${{ github.run_id }}
+          restore-keys: stock-cache-
       - name: 抓取資料
         env:
           DATA_KEY: ${{ secrets.DATA_KEY }}
@@ -48,6 +54,12 @@ jobs:
           else
             python scripts/update_data.py ${{ inputs.force && '--force' || '' }}
           fi
+      - name: 儲存個股資料快取
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: stock-cache-${{ github.run_id }}
       - name: 提交資料
         run: |
           git config user.name "github-actions[bot]"

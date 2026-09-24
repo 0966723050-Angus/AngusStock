@@ -41,7 +41,7 @@
     const amp = prev && high != null && low != null ? ((high - low) / prev) * 100 : null;
     const isIdx = code === "t00" || code === "o00";
     const stale = date && quotes.latest && date < quotes.latest ? `<span class="stale">${+date.slice(5, 7)}/${+date.slice(8)}</span>` : "";
-    return `<tr>
+    return `<tr${isIdx ? "" : ` class="link" data-code="${esc(code)}" tabindex="0" role="link" aria-label="${esc(name)} 個股資訊"`}>
       <td class="stk"><b>${esc(name)}</b><small>${isIdx ? "指數" : esc(code)}${stale}</small></td>
       <td class="num ${cls(chg)}"><b>${fmt(price, priceDigits(price))}</b></td>
       <td class="num ${cls(chg)}">${chg > 0 ? "▲" : chg < 0 ? "▼" : ""}${chg == null ? "--" : fmt(Math.abs(chg), priceDigits(price) === 0 && chg % 1 === 0 ? 0 : 2)}</td>
@@ -62,7 +62,7 @@
           </table>
         </div>
       </article>
-      <p class="muted small note">報價於開盤日 13:35、22:00 自動更新，或按「立即更新」取得最新報價；成交量單位：張。日期標示為非當日資料。</p>`;
+      <p class="muted small note">點選股票可查看個股資訊。報價於開盤日 13:35、22:00 自動更新，或按「立即更新」取得最新報價；成交量單位：張。日期標示為非當日資料。</p>`;
   }
 
   // ------------------------------------------------------------ 編輯畫面
@@ -213,6 +213,9 @@
     });
     App.setAction(btn);
     renderTable(view, wl.syncing);
+    const go = (tr) => { if (tr) location.hash = "#/stock?code=" + encodeURIComponent(tr.dataset.code); };
+    view.addEventListener("click", (e) => go(e.target.closest("tr.link")));
+    view.addEventListener("keydown", (e) => { if (e.key === "Enter") go(e.target.closest("tr.link")); });
   }
 
   App.register({ id: "watch", title: "自選股行情", icon: "⭐", render });

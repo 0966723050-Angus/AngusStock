@@ -1,12 +1,13 @@
 /* Service Worker：App 殼層快取優先，資料一律走網路 */
-const CACHE = "angus-stock-v5";
+const CACHE = "angus-stock-v6";
 const SHELL = [
   "./",
   "index.html",
-  "css/style.css?v=5",
-  "js/app.js?v=4",
-  "js/home.js?v=4",
-  "js/watch.js?v=4",
+  "css/style.css?v=6",
+  "js/app.js?v=6",
+  "js/home.js?v=6",
+  "js/watch.js?v=6",
+  "js/stock.js?v=6",
   "manifest.webmanifest",
   "icons/icon-192.png",
   "icons/icon-512.png",
