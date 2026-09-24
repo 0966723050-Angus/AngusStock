@@ -322,3 +322,95 @@ def build_stocks(key, items, quote_rows, trading_days, refresh_fund):
         }
     u.save_json(STOCKS_FILE, u.encrypt_json({"updated": dt.datetime.now(u.TZ).strftime("%Y-%m-%d %H:%M"), "stocks": out}, key))
     print(f"  個股資訊已更新：{len(out)} 檔，圖表 {len(dates)} 個交易日")
+
+
+# ---------------------------------------------------------------- 技術分析：個股日 K 歷史
+HIST = CACHE / "hist"
+OHLC_FILE = u.ROOT / "site" / "data" / "ohlc.enc.json"
+HIST_MONTHS = 14  # 顯示半年 + SMA120／52 週所需暖身資料
+
+
+def fetch_month(code, market, month: dt.date):
+    """單一股票單月日成交：[[日期, 開, 高, 低, 收, 張數, 漲跌]]"""
+    out = []
+    if market == "tse":
+        j = u.get_json("https://www.twse.com.tw/exchangeReport/STOCK_DAY",
+                       {"response": "json", "date": month.strftime("%Y%m01"), "stockNo": code})
+        for r in (j or {}).get("data", []) if j and j.get("stat") == "OK" else []:
+            o, h, l, c = (u.num(x) for x in r[3:7])
+            if c is not None:
+                out.append([u.roc_to_iso(r[0]), o, h, l, c, round((u.num(r[1]) or 0) / 1000), u.num(r[7].replace("X", ""))])
+    else:
+        j = u.get_json("https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock",
+                       {"code": code, "date": month.strftime("%Y/%m/01"), "response": "json"})
+        try:
+            for r in j["tables"][0]["data"]:
+                o, h, l, c = (u.num(x) for x in r[3:7])
+                if c is not None:
+                    out.append([u.roc_to_iso(r[0].replace("＊", "").strip()), o, h, l, c, round(u.num(r[1]) or 0), u.num(r[7])])
+        except Exception:  # noqa: BLE001
+            pass
+    u.polite()
+    return out
+
+
+def months_back(day: dt.date, n):
+    m = day.replace(day=1)
+    out = []
+    for _ in range(n):
+        out.append(m)
+        m = (m - dt.timedelta(days=1)).replace(day=1)
+    return sorted(out)
+
+
+def update_hist(code, market, latest_day: str):
+    """維護 cache/hist/<code>.json；新股票回補 HIST_MONTHS 個月，其後只抓當月"""
+    HIST.mkdir(parents=True, exist_ok=True)
+    f = HIST / f"{code}.json"
+    rows = json.loads(f.read_text("utf-8")) if f.exists() else []
+    today = dt.date.today()
+    if not rows:
+        print(f"  日K回補 {code}（{HIST_MONTHS} 個月）")
+        months = months_back(today, HIST_MONTHS)
+    elif rows[-1][0] >= latest_day:
+        return rows
+    else:
+        last = dt.date.fromisoformat(rows[-1][0])
+        months = [m for m in months_back(today, 3) if m >= last.replace(day=1)]
+    data = {r[0]: r for r in rows}
+    for m in months:
+        for r in fetch_month(code, market, m):
+            data[r[0]] = r
+    cutoff = (today - dt.timedelta(days=HIST_MONTHS * 31)).isoformat()
+    rows = [data[d] for d in sorted(data) if d >= cutoff]
+    f.write_text(json.dumps(rows, separators=(",", ":")), "utf-8")
+    return rows
+
+
+def index_hist(state, mkt):
+    """指數日 K：由既有指數歷史（無漲跌欄則自行計算）"""
+    idx, mk = state.get(f"{mkt}_idx", {}), state.get(f"{mkt}_mkt", {})
+    rows, prev = [], None
+    for d in sorted(idx):
+        o, h, l, c = idx[d]
+        rows.append([d, o, h, l, c, round((mk.get(d) or {}).get("val") or 0, 2), None if prev is None else round(c - prev, 2)])
+        prev = c
+    return rows
+
+
+def build_ohlc(key, items, quote_rows, state):
+    fund = json.loads(FUND_FILE.read_text("utf-8"))["rows"] if FUND_FILE.exists() else {}
+    latest = max(state.get("tse_idx", {}) or [""])
+    out = {}
+    for code in items:
+        if code in u.INDEX_ITEMS:
+            name, mkt = u.INDEX_ITEMS[code]
+            out[code] = {"name": name, "market": "idx", "vol_unit": "億", "rows": index_hist(state, mkt)}
+            continue
+        q = quote_rows.get(code)
+        if not q:
+            continue
+        rows = update_hist(code, q[1], latest)
+        out[code] = {"name": q[0], "market": q[1], "vol_unit": "張", "shares": fund.get(code, {}).get("shares"), "rows": rows}
+    u.save_json(OHLC_FILE, u.encrypt_json({"updated": dt.datetime.now(u.TZ).strftime("%Y-%m-%d %H:%M"), "stocks": out}, key))
+    print(f"  技術分析日K已更新：{len(out)} 檔")

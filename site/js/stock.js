@@ -109,11 +109,10 @@
     const at = list.indexOf(code);
     const prev = at > 0 ? list[at - 1] : null, next = at >= 0 && at < list.length - 1 ? list[at + 1] : null;
 
-    const tech = document.createElement("button");
-    tech.type = "button";
+    const tech = document.createElement("a");
     tech.className = "action-btn";
+    tech.href = `#/tech?code=${encodeURIComponent(code)}`;
     tech.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg><span>技術分析</span>';
-    tech.addEventListener("click", () => App.toast("技術分析頁面建置中"));
     App.setAction(tech);
 
     const nav = `

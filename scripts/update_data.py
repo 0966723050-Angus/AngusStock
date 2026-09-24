@@ -547,6 +547,7 @@ def update_watch(key, blob_text=None, full=False):
         import stock_info
         days = sorted(load_state(key).get("tse_idx", {}))
         stock_info.build_stocks(key, items, rows, days, refresh_fund=full)
+        stock_info.build_ohlc(key, items, rows, load_state(key))
     except Exception as e:  # noqa: BLE001  個股資訊失敗不影響其他資料
         import traceback
         traceback.print_exc()
