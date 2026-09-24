@@ -4,7 +4,7 @@
 
   const GROUP = "ta";
   const OPT_KEY = "angus.ta.overlays";
-  const DEFAULT_SPAN = 125; // 約半年交易日
+  const DEFAULT_SPAN = () => (window.innerWidth < 700 ? 60 : 125); // 手機約 3 個月、桌機約半年
   const charts = [];
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const fmt = (v, d = 2) => (v == null || !isFinite(v) ? "--" : Number(v).toLocaleString("zh-TW", { minimumFractionDigits: d, maximumFractionDigits: d }));
@@ -151,8 +151,7 @@
   function baseOpt(t, P, extra) {
     return {
       animation: false,
-      tooltip: { trigger: "axis", confine: true, axisPointer: { type: "cross", label: { backgroundColor: "#555" } },
-        backgroundColor: css("--surface"), borderColor: css("--border"), textStyle: { color: css("--text"), fontSize: 12 } },
+      tooltip: { trigger: "axis", showContent: false, axisPointer: { type: "cross", label: { backgroundColor: "#555" } } },
       axisPointer: { link: [{ xAxisIndex: "all" }] },
       ...extra,
     };
@@ -165,7 +164,7 @@
   const yVal = (P, extra = {}) => ({ type: "value", scale: true, position: "right", splitNumber: 4,
     axisLabel: { color: P.text, fontSize: 10 }, splitLine: { lineStyle: { color: P.grid } }, ...extra });
   const line = (name, data, color, extra = {}) => ({ name, type: "line", data, showSymbol: false, smooth: true, connectNulls: false,
-    lineStyle: { width: 1.8, color, ...(extra.lineStyle || {}) }, itemStyle: { color }, ...extra });
+    lineStyle: { width: 1.2, color, ...(extra.lineStyle || {}) }, itemStyle: { color }, ...extra });
 
   function zoomOpt(t, span, show) {
     const n = t.d.length;
@@ -180,37 +179,37 @@
     const candles = t.d.map((_, i) => [t.o[i], t.c[i], t.l[i], t.h[i]]);
     const volColor = (i) => (i > 0 && t.c[i] < t.c[i - 1] ? P.down : P.up);
     const S = [
-      { name: "K線", type: "candlestick", data: candles, itemStyle: { color: P.up, color0: P.down, borderColor: P.up, borderColor0: P.down }, barMaxWidth: 10 },
+      { name: "K線", type: "candlestick", data: candles, itemStyle: { color: P.up, color0: P.down, borderColor: P.up, borderColor0: P.down }, barWidth: "70%", barMaxWidth: 18 },
     ];
     if (ov.ma5) S.push(line("MA5", t.ma5, P.ma5));
     if (ov.ma10) S.push(line("MA10", t.ma10, P.ma10));
     if (ov.ma20) S.push(line("MA20", t.ma20, P.ma20));
     if (ov.ma50) S.push(line("MA50", t.ma50, P.ma50));
-    if (ov.ema) S.push(line("EMA13", t.e13, P.ema, { lineStyle: { width: 2.4 } }));
-    if (ov.up) S.push(line("上布林", t.boll.up, P.boll, { lineStyle: { type: "dotted", width: 2 } }));
-    if (ov.lo) S.push(line("下布林", t.boll.lo, P.boll, { lineStyle: { type: "dotted", width: 2 } }));
-    if (ov.sarUp) S.push(line("SAR多", t.sarUp, P.sarUp, { smooth: false, lineStyle: { width: 2.4 } }));
-    if (ov.sarDn) S.push(line("SAR空", t.sarDn, P.sarDn, { smooth: false, lineStyle: { width: 2.4 } }));
-    S.push({ name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, barMaxWidth: 10,
+    if (ov.ema) S.push(line("EMA13", t.e13, P.ema, { lineStyle: { width: 1.6 } }));
+    if (ov.up) S.push(line("上布林", t.boll.up, P.boll, { lineStyle: { type: "dotted", width: 1.4 } }));
+    if (ov.lo) S.push(line("下布林", t.boll.lo, P.boll, { lineStyle: { type: "dotted", width: 1.4 } }));
+    if (ov.sarUp) S.push(line("SAR多", t.sarUp, P.sarUp, { smooth: false, lineStyle: { width: 1.5 } }));
+    if (ov.sarDn) S.push(line("SAR空", t.sarDn, P.sarDn, { smooth: false, lineStyle: { width: 1.5 } }));
+    S.push({ name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, barWidth: "70%", barMaxWidth: 18,
       data: t.v.map((v, i) => ({ value: v, itemStyle: { color: volColor(i) } })) });
-    S.push(line("量MA5", t.vma5, P.vma, { xAxisIndex: 1, yAxisIndex: 1, smooth: true, lineStyle: { width: 1.6 } }));
+    S.push(line("量MA5", t.vma5, P.vma, { xAxisIndex: 1, yAxisIndex: 1, smooth: true, lineStyle: { width: 1.2 } }));
     c.setOption(baseOpt(t, P, {
-      legend: { top: 4, left: 8, itemWidth: 16, itemHeight: 8, textStyle: { color: css("--text-2"), fontSize: 11 },
-        data: ["MA5", "MA10", "MA20", "MA50", "EMA13"].filter((x) => S.some((s) => s.name === x)) },
-      grid: [{ left: 8, right: 52, top: 34, height: "58%" }, { left: 8, right: 52, top: "73%", bottom: 50 }],
+      grid: [{ left: 8, right: 52, top: 12, height: "62%" }, { left: 8, right: 52, top: "74%", bottom: 50 }],
       xAxis: [xCat(t, P, 0, false), xCat(t, P, 1, true)],
       yAxis: [yVal(P), yVal(P, { gridIndex: 1, splitNumber: 2, axisLabel: { color: P.text, fontSize: 10, formatter: (v) => (v >= 1e4 ? +(v / 1e4).toFixed(1) + "萬" : v) } })],
       dataZoom: zoomOpt(t, span, true),
       series: S,
-      tooltip: { ...baseOpt(t, P, {}).tooltip, formatter: (ps) => {
-        const i = ps[0].dataIndex;
-        const pct = i > 0 ? ((t.c[i] - t.c[i - 1]) / t.c[i - 1]) * 100 : null;
-        return `<b>${t.d[i]}</b><br>開 ${fmt(t.o[i])}　高 ${fmt(t.h[i])}<br>低 ${fmt(t.l[i])}　收 <b>${fmt(t.c[i])}</b>` +
-          (pct == null ? "" : ` <span style="color:${pct >= 0 ? P.up : P.down}">${pct >= 0 ? "+" : ""}${fmt(pct)}%</span>`) +
-          `<br>成交量 ${fmt(t.v[i], 0)} ${name.unit}` +
-          ps.filter((p) => p.seriesType === "line" && p.value != null).map((p) => `<br>${p.marker}${p.seriesName} ${fmt(p.value)}`).join("");
-      } },
     }));
+    // 資訊列：日期、開高低收、成交量與各線數值
+    c.__info = (i) => {
+      const pct = i > 0 ? ((t.c[i] - t.c[i - 1]) / t.c[i - 1]) * 100 : null;
+      const pc = pct == null ? "" : pct >= 0 ? "up" : "down";
+      return `<span class="ti-date">${t.d[i]}</span>` +
+        `<span class="ti">開 <b>${fmt(t.o[i])}</b></span><span class="ti">高 <b>${fmt(t.h[i])}</b></span>` +
+        `<span class="ti">低 <b>${fmt(t.l[i])}</b></span><span class="ti">收 <b class="${pc}">${fmt(t.c[i])}</b>` +
+        (pct == null ? "" : ` <b class="${pc}">${pct >= 0 ? "+" : ""}${fmt(pct)}%</b>`) + `</span>` +
+        `<span class="ti">量 <b>${fmt(t.v[i], 0)}</b> ${name.unit}</span>` + chips(S.filter((x) => x.type === "line"), i);
+    };
     return c;
   }
 
@@ -220,16 +219,25 @@
     c.group = GROUP;
     const { series, yAxis = {}, marks, legend } = build(P);
     c.setOption(baseOpt(t, P, {
-      legend: legend ? { top: 2, left: 8, itemWidth: 16, itemHeight: 8, textStyle: { color: css("--text-2"), fontSize: 11 } } : undefined,
-      grid: { left: Array.isArray(yAxis) ? 48 : 8, right: 52, top: legend ? 28 : 14, bottom: 26 },
+      grid: { left: Array.isArray(yAxis) ? 48 : 8, right: 52, top: 12, bottom: 26 },
       xAxis: xCat(t, P),
       yAxis: Array.isArray(yAxis) ? yAxis.map((y) => yVal(P, y)) : yVal(P, yAxis),
       dataZoom: zoomOpt(t, span, false),
       series: series.concat(marks ? [{ type: "line", data: [], markLine: { silent: true, symbol: "none", label: { show: false }, data: marks } }] : []),
-      tooltip: { ...baseOpt(t, P, {}).tooltip, axisPointer: { type: "line" },
-        formatter: (ps) => `<b>${t.d[ps[0].dataIndex]}</b>` + ps.filter((p) => p.value != null && p.seriesName).map((p) => `<br>${p.marker}${p.seriesName} ${fmt(Array.isArray(p.value) ? p.value[1] : p.value)}`).join("") },
+      tooltip: { trigger: "axis", showContent: false, axisPointer: { type: "line" } },
     }));
+    c.__info = (i) => `<span class="ti-date">${t.d[i]}</span>` + chips(series, i);
     return c;
+  }
+  // 資訊列中每個數列的「色塊＋名稱＋數值」
+  function chips(series, i) {
+    return series.filter((s) => s.name).map((s) => {
+      const d = s.data[i];
+      const v = d != null && typeof d === "object" && !Array.isArray(d) ? d.value : d;
+      if (v == null) return "";
+      const color = (d && d.itemStyle && d.itemStyle.color) || (s.lineStyle && s.lineStyle.color) || (s.itemStyle && s.itemStyle.color);
+      return `<span class="ti"><i style="background:${color}"></i>${esc(s.name)} <b>${fmt(v, Math.abs(v) >= 1e4 ? 0 : 2)}</b></span>`;
+    }).join("");
   }
   const hline = (y, color, type = "dotted", width = 2) => ({ yAxis: y, lineStyle: { color, type, width } });
 
@@ -306,7 +314,7 @@
       liveNote = "上櫃資料來源：櫃買中心（網站排程更新）";
     }
     const t = compute(rows);
-    let span = Math.min(DEFAULT_SPAN, t.d.length);
+    let span = Math.min(DEFAULT_SPAN(), t.d.length);
     const ov = loadOverlays();
 
     const tech = document.createElement("a");
@@ -334,15 +342,16 @@
               <button type="button" class="zbtn zout" data-z="out" aria-label="縮小">－</button>
             </span>
           </div>
+          <div class="ta-info" data-for="0"></div>
           <div class="chart ta-k" id="taK"></div>
           <div class="ta-checks">${LINES.map((x) => `<label><input type="checkbox" data-k="${x.key}" ${ov[x.key] ? "checked" : ""}> ${x.label}</label>`).join("")}</div>
         </article>
       </div>
       <div class="ta-subs">
         ${[["MACD", "taMacd"], ["KD", "taKd"], ["J", "taJ"], ["RSI", "taRsi"], ["DMA", "taDma"], ["E-Ray Index", "taEray"]].map(([n, id]) => `
-          <article class="card"><div class="chart-title"><span class="tag t1">${n}</span></div><div class="chart ta-sub" id="${id}"></div></article>`).join("")}
+          <article class="card"><div class="chart-title"><span class="tag t1">${n}</span></div><div class="ta-info" data-id="${id}"></div><div class="chart ta-sub" id="${id}"></div></article>`).join("")}
       </div>
-      <p class="muted small note">K 線預設顯示近半年，可用 ＋／－ 或下方拖曳條調整區間（所有圖表同步）。EMA 週期 13；布林 20 日 ±2 標準差；KD 9 日；RSI 6／12 日；DMA 為 SMA20 向後位移 5 日，AMA = 收盤 − DMA；E-Ray 為 Elder Ray（最高／最低價 − EMA13）。</p>`;
+      <p class="muted small note">K 線預設顯示近 3 個月（手機）／半年（電腦）；點選圖表可在上方資訊列查看該日數值，可用 ＋／－ 或下方拖曳條調整區間（所有圖表同步）。EMA 週期 13；布林 20 日 ±2 標準差；KD 9 日；RSI 6／12 日；DMA 為 SMA20 向後位移 5 日，AMA = 收盤 − DMA；E-Ray 為 Elder Ray（最高／最低價 − EMA13）。</p>`;
 
     const kEl = view.querySelector("#taK");
     const draw = () => {
@@ -351,7 +360,7 @@
       charts.push(subChart(view.querySelector("#taMacd"), t, span, (P) => ({
         legend: true,
         series: [
-          { name: "柱狀體", type: "bar", barMaxWidth: 8, itemStyle: { color: "#ff2020" }, data: t.macd.hist.map((v, i) => {
+          { name: "柱狀體", type: "bar", barWidth: "70%", barMaxWidth: 16, itemStyle: { color: "#ff2020" }, data: t.macd.hist.map((v, i) => {
             const prev = i > 0 ? t.macd.hist[i - 1] : v;
             const style = v >= 0 ? { color: P.up } : v < prev ? { color: "#2e7d32" } : { color: css("--surface"), borderColor: css("--text-2"), borderWidth: 1 };
             return { value: v, itemStyle: style };
@@ -384,21 +393,41 @@
         legend: true,
         yAxis: [{ position: "left" }, { position: "right", splitLine: { show: false } }],
         series: [
-          { name: "AMA", type: "bar", yAxisIndex: 1, barMaxWidth: 8, itemStyle: { color: "#ff2020" }, data: t.ama.map((v) => (v == null ? null : { value: v, itemStyle: { color: v >= 0 ? "#ff2020" : "#18e018" } })) },
-          line("DMA", t.dma, "#f5b800", { lineStyle: { width: 2.2 } }),
-          line("股價", t.c, "#a0309a", { lineStyle: { width: 2 } }),
-          line("AMA 5日均", t.amaMa5, "#1f3fe0", { yAxisIndex: 1, lineStyle: { type: "dotted", width: 2.4 } }),
+          { name: "AMA", type: "bar", yAxisIndex: 1, barWidth: "70%", barMaxWidth: 16, itemStyle: { color: "#ff2020" }, data: t.ama.map((v) => (v == null ? null : { value: v, itemStyle: { color: v >= 0 ? "#ff2020" : "#18e018" } })) },
+          line("DMA", t.dma, "#f5b800", { lineStyle: { width: 1.4 } }),
+          line("股價", t.c, "#a0309a", { lineStyle: { width: 1.4 } }),
+          line("AMA 5日均", t.amaMa5, "#1f3fe0", { yAxisIndex: 1, lineStyle: { type: "dotted", width: 1.6 } }),
         ],
       })));
       charts.push(subChart(view.querySelector("#taEray"), t, span, (P) => ({
         legend: true,
         series: [
-          { name: "多方力道", type: "bar", barMaxWidth: 8, itemStyle: { color: "#ff2020" }, data: t.bull.map((v) => ({ value: v, itemStyle: { color: v >= 0 ? "#ff2020" : "#0a9f4a" } })) },
-          { name: "空方力道", type: "bar", barGap: "-100%", itemStyle: { color: "#3cf03c" }, barMaxWidth: 8, data: t.bear.map((v) => ({ value: v < 0 ? v : null, itemStyle: { color: "#3cf03c" } })) },
+          { name: "多方力道", type: "bar", barWidth: "70%", barMaxWidth: 16, itemStyle: { color: "#ff2020" }, data: t.bull.map((v) => ({ value: v, itemStyle: { color: v >= 0 ? "#ff2020" : "#0a9f4a" } })) },
+          { name: "空方力道", type: "bar", barGap: "-100%", itemStyle: { color: "#3cf03c" }, barWidth: "70%", barMaxWidth: 16, data: t.bear.map((v) => ({ value: v < 0 ? v : null, itemStyle: { color: "#3cf03c" } })) },
         ],
         marks: [hline(0, css("--text"), "solid", 1)],
       })));
       echarts.connect(GROUP);
+      bindInfo();
+    };
+    const last = t.d.length - 1;
+    const setInfo = (i) => {
+      charts.forEach((c) => {
+        const box = c.getDom() === kEl ? view.querySelector('.ta-info[data-for="0"]') : view.querySelector(`.ta-info[data-id="${c.getDom().id}"]`);
+        if (box && c.__info) box.innerHTML = c.__info(Math.max(0, Math.min(last, i)));
+      });
+    };
+    const bindInfo = () => {
+      charts.forEach((c) => {
+        if (c.__bound) return;
+        c.__bound = true;
+        c.on("updateAxisPointer", (e) => {
+          const ax = (e.axesInfo || []).find((a) => a.axisDim === "x");
+          if (ax && ax.value != null) setInfo(ax.value);
+        });
+        c.getZr().on("globalout", () => setInfo(last));
+      });
+      setInfo(last);
     };
     draw();
 
@@ -413,6 +442,7 @@
       charts[0].dispose(); charts[0] = klineChart(kEl, t, meta, ov, span);
       charts[0].dispatchAction({ type: "dataZoom", startValue: cur.startValue, endValue: cur.endValue });
       echarts.connect(GROUP);
+      bindInfo();
     });
     view.querySelector(".ta-zoom").addEventListener("click", (e) => {
       const z = e.target.closest("[data-z]")?.dataset.z;

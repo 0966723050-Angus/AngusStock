@@ -468,3 +468,16 @@ a.action-btn { text-decoration: none; }
 .ta-subs { display: grid; gap: 16px; grid-template-columns: 1fr; margin-bottom: 8px; }
 @media (min-width: 1000px) { .ta-subs { grid-template-columns: 1fr 1fr; } }
 .ta-sub { height: 260px; }
+
+/* 技術分析：圖表上方資訊列 */
+.ta-info {
+  display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: center;
+  min-height: 44px; padding: 6px 12px 4px; font-size: 12.5px; line-height: 1.5;
+  border-bottom: 1px dashed var(--border); color: var(--text-2);
+}
+.ta-info .ti-date { font-weight: 700; color: var(--text); margin-right: 2px; }
+.ta-info .ti { white-space: nowrap; }
+.ta-info .ti i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; }
+.ta-info b { color: var(--text); font-weight: 700; }
+.ta-info b.up { color: var(--up); }
+.ta-info b.down { color: var(--down); }
