@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="theme-color" content="#1c5cab">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Angus 股市">
+<title>Angus 股市</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+
+<!-- 登入畫面 -->
+<section id="login" class="login" hidden>
+  <form id="loginForm" class="login-card" autocomplete="on">
+    <img src="icons/icon-192.png" alt="" class="login-logo" width="64" height="64">
+    <h1>Angus 股市</h1>
+    <p class="muted">台股交易資訊與技術指標查詢</p>
+    <label>帳號
+      <input id="loginUser" name="username" autocomplete="username" inputmode="numeric" required>
+    </label>
+    <label>密碼
+      <input id="loginPwd" name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <label class="check"><input id="loginRemember" type="checkbox" checked> 在此裝置保持登入</label>
+    <p id="loginMsg" class="login-msg" role="alert"></p>
+    <button type="submit" id="loginBtn" class="btn-primary">登入</button>
+  </form>
+</section>
+
+<!-- 主畫面 -->
+<div id="app" hidden>
+  <header class="topbar">
+    <button id="menuBtn" class="icon-btn" aria-label="開啟選單" aria-expanded="false" aria-controls="drawer">
+      <span class="burger"><span></span><span></span><span></span></span>
+    </button>
+    <h1 id="pageTitle">首頁</h1>
+    <button id="refreshBtn" class="icon-btn" aria-label="重新整理資料" title="重新整理資料">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    </button>
+  </header>
+
+  <nav id="drawer" class="drawer" aria-label="主選單">
+    <div class="drawer-head">
+      <strong>Angus 股市</strong>
+      <span class="muted small" id="drawerUpdated"></span>
+    </div>
+    <ul id="menuList"></ul>
+    <div class="drawer-foot">
+      <button id="logoutBtn" class="btn-ghost">登出</button>
+    </div>
+  </nav>
+  <div id="scrim" class="scrim" hidden></div>
+
+  <main id="view" class="view"></main>
+  <footer class="foot muted small">資料來源：臺灣證券交易所、證券櫃檯買賣中心。僅供參考，不構成投資建議。</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script src="js/app.js?v=1"></script>
+<script src="js/home.js?v=1"></script>
+<script>App.start();</script>
+</body>
+</html>

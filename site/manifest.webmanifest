@@ -1,0 +1,17 @@
+{
+  "name": "Angus 股市",
+  "short_name": "Angus 股市",
+  "description": "台灣股市交易資訊與技術指標查詢",
+  "lang": "zh-Hant-TW",
+  "start_url": "./#/home",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f4f6",
+  "theme_color": "#1c5cab",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
