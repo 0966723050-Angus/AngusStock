@@ -163,7 +163,8 @@
   });
   const yVal = (P, extra = {}) => ({ type: "value", scale: true, position: "right", splitNumber: 4,
     axisLabel: { color: P.text, fontSize: 10 }, splitLine: { lineStyle: { color: P.grid } }, ...extra });
-  const line = (name, data, color, extra = {}) => ({ name, type: "line", data, showSymbol: false, smooth: true, connectNulls: false,
+  // symbol: "none"＋停用 emphasis：滑動十字線時不在線上顯示小圓圈
+  const line = (name, data, color, extra = {}) => ({ name, type: "line", data, symbol: "none", showSymbol: false, emphasis: { disabled: true }, smooth: true, connectNulls: false,
     lineStyle: { width: 1.2, color, ...(extra.lineStyle || {}) }, itemStyle: { color }, ...extra });
 
   function zoomOpt(t, span, show) {
