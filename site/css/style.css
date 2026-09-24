@@ -257,3 +257,24 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
   position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
   background: #222; color: #fff; padding: 8px 16px; border-radius: 999px; font-size: 14px; z-index: 60;
 }
+
+/* ---------- 立即更新 ---------- */
+.update-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.55); background: rgba(255,255,255,.12);
+  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.update-btn:hover { background: rgba(255,255,255,.22); }
+.update-btn:disabled { opacity: .6; cursor: progress; }
+@media (max-width: 360px) { .update-btn span { display: none; } .update-btn { padding: 0 9px; } }
+.update-bar {
+  position: sticky; top: calc(52px + env(safe-area-inset-top)); z-index: 19;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 8px 16px; font-size: 14px;
+  background: #fff7d6; color: #5c4400; border-bottom: 1px solid #f0dc8a;
+}
+.update-bar.ok { background: #e3f6e8; color: #0d5b25; border-color: #b5e2c2; }
+.update-bar.err { background: #fde4e4; color: #8a1f1f; border-color: #f3b9b9; }
+.update-bar.ok .spinner, .update-bar.err .spinner { display: none; }
+.spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }

@@ -1,11 +1,11 @@
 /* Service Worker：App 殼層快取優先，資料一律走網路 */
-const CACHE = "angus-stock-v1";
+const CACHE = "angus-stock-v2";
 const SHELL = [
   "./",
   "index.html",
-  "css/style.css?v=1",
-  "js/app.js?v=1",
-  "js/home.js?v=1",
+  "css/style.css?v=2",
+  "js/app.js?v=2",
+  "js/home.js?v=2",
   "manifest.webmanifest",
   "icons/icon-192.png",
   "icons/icon-512.png",
@@ -27,7 +27,7 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;
   // 資料檔：網路優先，離線時回傳最後一次快取
-  if (url.pathname.includes("/data/")) {
+  if (url.pathname.includes("/data/") || e.request.mode === "navigate") {
     e.respondWith(
       fetch(e.request).then((r) => {
         const copy = r.clone();

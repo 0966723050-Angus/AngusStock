@@ -111,6 +111,86 @@
     setTimeout(() => t.remove(), 2200);
   }
 
+  // ------------------------------------------------------------ 立即更新（觸發 GitHub Actions）
+  const RUN_STORE = "angus.stock.run";
+  let updating = false;
+
+  function bar(text, state) {
+    const b = $("#updateBar");
+    b.hidden = !text;
+    b.className = "update-bar" + (state ? " " + state : "");
+    $("#updateText").textContent = text || "";
+  }
+
+  async function gh(cfg, path, opts = {}) {
+    const r = await fetch(`https://api.github.com/repos/${cfg.repo}${path}`, {
+      ...opts,
+      headers: { Authorization: `Bearer ${cfg.token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", ...(opts.headers || {}) },
+      cache: "no-store",
+    });
+    if (r.status === 401 || r.status === 403) throw new Error("GitHub 權杖無效或已過期，請重新設定");
+    if (!r.ok) throw new Error("GitHub 回應錯誤 (" + r.status + ")");
+    return r.status === 204 ? null : r.json();
+  }
+
+  const elapsed = (t0) => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  // 等待 since 之後由手動觸發的執行完成
+  async function watchRun(cfg, since) {
+    const t0 = since;
+    let run = null;
+    for (;;) {
+      const list = await gh(cfg, `/actions/workflows/${cfg.workflow}/runs?event=workflow_dispatch&per_page=5`);
+      run = (list.workflow_runs || []).find((x) => Date.parse(x.created_at) >= since - 60000) || run;
+      if (run && run.status === "completed") break;
+      const phase = !run ? "排隊中" : run.status === "in_progress" ? "抓取資料與部署中" : "等待執行";
+      bar(`資料更新中（${phase}）… 已經過 ${elapsed(t0)}，約需 1～3 分鐘`);
+      if (Date.now() - t0 > 15 * 60000) throw new Error("更新逾時，請稍後再重新整理");
+      await new Promise((r) => setTimeout(r, 8000));
+    }
+    if (run.conclusion !== "success") throw new Error("更新失敗（" + run.conclusion + "）");
+  }
+
+  async function runUpdate(resumeSince) {
+    if (updating) return;
+    updating = true;
+    const btn = $("#updateBtn");
+    btn.disabled = true;
+    try {
+      let cfg;
+      try { cfg = await loadData("dispatch"); } catch (e) {
+        throw new Error("尚未設定更新權杖（請執行 scripts/set_dispatch_token.py）");
+      }
+      let since = resumeSince;
+      if (!since) {
+        since = Date.now();
+        bar("正在送出更新要求…");
+        await gh(cfg, `/actions/workflows/${cfg.workflow}/dispatches`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ref: "main", inputs: { force: "true" } }),
+        });
+        try { sessionStorage.setItem(RUN_STORE, String(since)); } catch (e) { /* ignore */ }
+      }
+      await watchRun(cfg, since);
+      bar("更新完成，重新載入資料…", "ok");
+      await new Promise((r) => setTimeout(r, 4000)); // 等待 Pages CDN 生效
+      await route();
+      bar("資料已更新完成", "ok");
+      setTimeout(() => bar(""), 4000);
+    } catch (e) {
+      bar(e.message || String(e), "err");
+      setTimeout(() => bar(""), 8000);
+    } finally {
+      try { sessionStorage.removeItem(RUN_STORE); } catch (e) { /* ignore */ }
+      updating = false;
+      btn.disabled = false;
+    }
+  }
+
   // ------------------------------------------------------------ 啟動
   function showLogin(msg) {
     $("#app").hidden = true;
@@ -123,6 +203,10 @@
     $("#login").hidden = true;
     $("#app").hidden = false;
     await route();
+    // 若更新進行中時重新整理了頁面，繼續追蹤
+    let pending = null;
+    try { pending = sessionStorage.getItem(RUN_STORE); } catch (e) { /* ignore */ }
+    if (pending) runUpdate(Number(pending));
   }
 
   async function onLogin(e) {
@@ -158,6 +242,9 @@
       await route();
       b.classList.remove("spin");
       toast("資料已更新");
+    });
+    $("#updateBtn").addEventListener("click", () => {
+      if (confirm("要立即向交易所抓取最新資料並更新網站嗎？\n（約需 1～3 分鐘）")) runUpdate();
     });
     window.addEventListener("hashchange", () => { if (dataKey) route(); });
 
