@@ -17,7 +17,7 @@ DAILY = CACHE / "daily"
 FUND_FILE = CACHE / "fund.json"
 EPS_DIR = CACHE / "eps"
 STOCKS_FILE = u.ROOT / "site" / "data" / "stocks.enc.json"
-CHART_DAYS = 40
+CHART_DAYS = 125  # 約半年交易日（買賣超與累積買賣超圖）
 CODE_RE = re.compile(r"^(\d{4}|00\d{2,4}[A-Z]?)$")
 MOPS = "https://mopsov.twse.com.tw/mops/web/"
 

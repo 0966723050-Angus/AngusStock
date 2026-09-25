@@ -193,7 +193,7 @@ def fetch_otc_breadth(day: dt.date):
 
 # ---------------------------------------------------------------- 盤中走勢
 def fetch_mis(market: str, day: dt.date):
-    """MIS 盤中每分鐘資料；market = 'TSE' | 'OTC'。回傳 (quote, series[[hhmm, close, 張]], 成交金額億)"""
+    """MIS 盤中每分鐘資料；market = 'TSE' | 'OTC'。回傳 (quote, series[[hhmm, close, 成交金額億]], 累計成交金額億)"""
     ch = "tse_t00.tw" if market == "TSE" else "otc_o00.tw"
     q = get_json("https://mis.twse.com.tw/stock/api/getStockInfo.jsp", {"ex_ch": ch, "json": 1, "delay": 0})
     o = get_json(f"https://mis.twse.com.tw/stock/data/mis_ohlc_{market}.txt")
@@ -206,7 +206,8 @@ def fetch_mis(market: str, day: dt.date):
         pass
     try:
         if o["staticObj"]["key"].endswith(day.strftime("%Y%m%d")):
-            series = [[a["ts"][:2] + ":" + a["ts"][2:4], num(a["c"]), num(a["s"])] for a in o["ohlcArray"]]
+            # ohlcArray 的 s 為該分鐘成交金額（百萬元；加總即為 staticObj.tz），換算為億元
+            series = [[a["ts"][:2] + ":" + a["ts"][2:4], num(a["c"]), round((num(a["s"]) or 0) / 100, 2)] for a in o["ohlcArray"]]
             value = num(o["staticObj"]["tz"]) / 1e8
     except Exception:  # noqa: BLE001
         pass
@@ -681,7 +682,7 @@ def main():
     polite()
     tse_quote, mis_series, tse_live_val = fetch_mis("TSE", day)
     if not tse_series:
-        tse_series, tse_unit = mis_series, "張"
+        tse_series, tse_unit = mis_series, "億"
     otc_quote, otc_series, otc_live_val = fetch_mis("OTC", day)
     polite()
     tse_breadth = fetch_tse_breadth(day); polite()
@@ -689,7 +690,7 @@ def main():
 
     home = state.get("home", {})
     tse_card = build_index_card(state, "tse", day, tse_quote, tse_series, tse_unit, tse_breadth, tse_live_val)
-    otc_card = build_index_card(state, "otc", day, otc_quote, otc_series, "張", otc_breadth, otc_live_val)
+    otc_card = build_index_card(state, "otc", day, otc_quote, otc_series, "億", otc_breadth, otc_live_val)
     # 若盤中資料抓不到，保留前一次同日資料
     for name, card in (("tse", tse_card), ("otc", otc_card)):
         old = home.get(name)

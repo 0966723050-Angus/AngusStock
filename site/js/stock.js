@@ -58,13 +58,18 @@
     { i: 1, title: "外資買賣超", tag: "t1" },
     { i: 2, title: "投信買賣超", tag: "t2" },
     { i: 3, title: "自營商買賣超", tag: "t3" },
+    // 累積買賣超：自圖表起始日起逐日加總
+    { i: 1, title: "外資累積買賣超", tag: "t1", cum: true, color: "#ff3fa0" },
+    { i: 2, title: "投信累積買賣超", tag: "t2", cum: true, color: "#f5b800" },
   ];
 
-  function drawChart(el, chart, idx) {
+  function drawChart(el, chart, x) {
+    const idx = x.i;
     const c = echarts.init(el);
     charts.push(c);
     const dates = chart.map((r) => r[0]);
-    const vals = chart.map((r) => r[idx]);
+    let acc = 0;
+    const vals = x.cum ? chart.map((r) => (acc += r[idx] || 0)) : chart.map((r) => r[idx]);
     const px = chart.map((r) => r[4]);
     const up = css("--up"), down = css("--down"), line = css("--line");
     const pxv = px.filter((v) => v != null);
@@ -78,7 +83,7 @@
         backgroundColor: css("--surface"), borderColor: css("--border"), textStyle: { color: css("--text"), fontSize: 12 },
         formatter: (ps) => {
           const i = ps[0].dataIndex;
-          return `<b>${dates[i]}</b><br>買賣超 <b style="color:${vals[i] >= 0 ? up : down}">${sgn(vals[i], 0)}</b> 張<br>收盤價 <b>${fmt(px[i])}</b>`;
+          return `<b>${dates[i]}</b><br>${x.cum ? "累積買賣超" : "買賣超"} <b style="color:${vals[i] >= 0 ? up : down}">${sgn(vals[i], 0)}</b> 張<br>收盤價 <b>${fmt(px[i])}</b>`;
         },
       },
       xAxis: {
@@ -92,8 +97,10 @@
           axisLabel: { ...muted, color: line, formatter: (v) => fmt(v, v >= 100 ? 0 : 1) } },
       ],
       series: [
-        { name: "買賣超", type: "bar", data: vals.map((v) => ({ value: v, itemStyle: { color: v >= 0 ? up : down } })), barMaxWidth: 10 },
-        { name: "股價", type: "line", yAxisIndex: 1, data: px, smooth: true, showSymbol: false, lineStyle: { width: 2.5, color: line }, itemStyle: { color: line } },
+        x.cum
+          ? { name: "累積買賣超", type: "line", data: vals, smooth: true, symbol: "none", emphasis: { disabled: true }, lineStyle: { width: 2, color: x.color }, itemStyle: { color: x.color } }
+          : { name: "買賣超", type: "bar", data: vals.map((v) => ({ value: v, itemStyle: { color: v >= 0 ? up : down } })), barMaxWidth: 8 },
+        { name: "股價", type: "line", yAxisIndex: 1, data: px, smooth: true, symbol: "none", emphasis: { disabled: true }, lineStyle: { width: 2, color: line }, itemStyle: { color: line } },
       ],
     });
   }
@@ -134,16 +141,16 @@
       <div class="stock-grid">
         ${infoCard(s, code)}
         <div class="stock-charts">
-          ${SERIES.map((x) => `
+          ${SERIES.map((x, k) => `
             <article class="card">
-              <div class="chart-title"><span class="tag ${x.tag}">${x.title}</span><span class="muted small">單位：張｜藍線：收盤價</span></div>
-              <div class="chart inst-chart" data-i="${x.i}"></div>
+              <div class="chart-title"><span class="tag ${x.tag}">${x.title}</span><span class="muted small">單位：張｜藍線：收盤價${x.cum ? `｜自 ${s.chart.length ? s.chart[0][0].slice(5).replace("-", "/") : ""} 起累計` : ""}</span></div>
+              <div class="chart inst-chart" data-k="${k}"></div>
             </article>`).join("")}
         </div>
       </div>
-      <p class="muted small note">資料時間 ${esc(data.updated)}。投信、自營商持股比率官方未公布；EPS(Y) 為近四季合計；量增幅為與前一交易日成交量比較。</p>`;
+      <p class="muted small note">資料時間 ${esc(data.updated)}。投信、自營商持股比率官方未公布；EPS(Y) 為近四季合計；量增幅為與前一交易日成交量比較；買賣超與累積買賣超為近半年（約 125 個交易日）。</p>`;
     view.querySelectorAll(".inst-chart").forEach((el) => {
-      if (s.chart.length) drawChart(el, s.chart, +el.dataset.i);
+      if (s.chart.length) drawChart(el, s.chart, SERIES[+el.dataset.k]);
       else el.outerHTML = '<div class="empty">尚無買賣超歷史資料</div>';
     });
   }

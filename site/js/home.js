@@ -1,4 +1,4 @@
-/* 首頁：大盤指數、融資融券統計、三大法人買賣超統計、法人買賣超排行 */
+/* 首頁：大盤指數、三大法人買賣超統計、法人買賣超排行、融資融券統計 */
 (function () {
   "use strict";
 
@@ -347,12 +347,6 @@
         ${indexCard("櫃買指數", d.otc)}
       </div>
 
-      <div class="section-title"><h2>融資融券統計</h2><span class="muted small">融資：億元｜融券：張｜券資比 = 融券 ÷ 融資（張）</span></div>
-      <div class="grid-2 stack">
-        ${marginCard("上市融資融券", "tse", d.margin_tse)}
-        ${marginCard("上櫃融資融券", "otc", d.margin_otc)}
-      </div>
-
       <div class="section-title"><h2>三大法人買賣超統計</h2></div>
       <div class="grid-2 stack">
         ${instCard("上市三大法人", "tse", d.inst_tse)}
@@ -361,6 +355,12 @@
 
       <div class="section-title"><h2>法人買賣超排行</h2><span class="muted small">${d.top ? "資料日 " + d.top.date + "｜上市＋上櫃普通股｜單位：張" : ""}</span></div>
       <div class="stack">${rankCard(d.top)}</div>
+
+      <div class="section-title"><h2>融資融券統計</h2><span class="muted small">融資：億元｜融券：張｜券資比 = 融券 ÷ 融資（張）</span></div>
+      <div class="grid-2 stack">
+        ${marginCard("上市融資融券", "tse", d.margin_tse)}
+        ${marginCard("上櫃融資融券", "otc", d.margin_otc)}
+      </div>
     `;
     drawIndexChart(view.querySelector('[data-chart="加權指數"]'), d.tse || {});
     drawIndexChart(view.querySelector('[data-chart="櫃買指數"]'), d.otc || {});
