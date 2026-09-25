@@ -17,7 +17,17 @@ DAILY = CACHE / "daily"
 FUND_FILE = CACHE / "fund.json"
 EPS_DIR = CACHE / "eps"
 STOCKS_FILE = u.ROOT / "site" / "data" / "stocks.enc.json"
-CHART_DAYS = 125  # 約半年交易日（買賣超與累積買賣超圖）
+CHART_MONTHS = 6  # 買賣超與累積買賣超圖：由最新資料日往前 6 個月
+
+
+def months_before(iso, months=CHART_MONTHS):
+    """'2026-09-24' → '2026-03-24'（該月無此日時取月底，例如 8/31 → 2/28）"""
+    d = dt.date.fromisoformat(iso)
+    y, m = d.year, d.month - months
+    while m < 1:
+        y, m = y - 1, m + 12
+    last = (dt.date(y + (m == 12), m % 12 + 1, 1) - dt.timedelta(days=1)).day
+    return dt.date(y, m, min(d.day, last)).isoformat()
 CODE_RE = re.compile(r"^(\d{4}|00\d{2,4}[A-Z]?)$")
 MOPS = "https://mopsov.twse.com.tw/mops/web/"
 
@@ -99,9 +109,12 @@ def fetch_daily(day: dt.date):
 
 
 def ensure_daily(days):
-    """補齊最近 CHART_DAYS 個交易日的每日檔，並刪除過舊檔案"""
+    """補齊由最新交易日往前 6 個月的每日檔，並刪除過舊檔案"""
     DAILY.mkdir(parents=True, exist_ok=True)
-    keep = set(days[-CHART_DAYS:])
+    if not days:
+        return
+    cutoff = months_before(max(days))
+    keep = {d for d in days if d >= cutoff}
     for iso in sorted(keep):
         f = DAILY / f"{iso}.json.gz"
         if f.exists():
@@ -293,7 +306,9 @@ def build_stocks(key, items, quote_rows, trading_days, refresh_fund):
     ensure_daily(trading_days)
     daily = load_daily()
     fund = load_fund(refresh_fund)
-    dates = sorted(daily)[-CHART_DAYS:]
+    all_dates = sorted(daily)
+    cutoff = months_before(all_dates[-1]) if all_dates else ""
+    dates = [d for d in all_dates if d >= cutoff]
     out = {}
     for code in items:
         if code in u.INDEX_ITEMS:

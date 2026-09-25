@@ -148,7 +148,7 @@
             </article>`).join("")}
         </div>
       </div>
-      <p class="muted small note">資料時間 ${esc(data.updated)}。投信、自營商持股比率官方未公布；EPS(Y) 為近四季合計；量增幅為與前一交易日成交量比較；買賣超與累積買賣超為近半年（約 125 個交易日）。</p>`;
+      <p class="muted small note">資料時間 ${esc(data.updated)}。投信、自營商持股比率官方未公布；EPS(Y) 為近四季合計；量增幅為與前一交易日成交量比較；買賣超與累積買賣超期間為最新資料日往前 6 個月。</p>`;
     view.querySelectorAll(".inst-chart").forEach((el) => {
       if (s.chart.length) drawChart(el, s.chart, SERIES[+el.dataset.k]);
       else el.outerHTML = '<div class="empty">尚無買賣超歷史資料</div>';
