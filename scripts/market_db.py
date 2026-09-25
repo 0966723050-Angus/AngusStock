@@ -28,7 +28,7 @@ MARKET = u.ROOT / "cache" / "market"
 SCREEN_FILE = u.ROOT / "site" / "data" / "screen.enc.json"
 HIST_DIR = u.ROOT / "site" / "data" / "hist"
 KEEP_DAYS = 260
-STOCK_RE = re.compile(r"^[1-9]\d{3}$")          # 普通股（資料庫範圍）
+STOCK_RE = re.compile(r"^[1-9]\d{3}$")          # 普通股（資料庫範圍；ETF 代號為 00 開頭，不在此範圍）
 ANY_RE = re.compile(r"^(\d{4}|00\d{2,4}[A-Z]?)$")  # 含 ETF（月線資料）
 
 # 資料庫欄位（今天、昨天各一組）
@@ -98,6 +98,11 @@ def fetch_mis_snapshot(day: dt.date, ref: dict):
             out[m["c"]] = [ref[m["c"]][0], m.get("ex", ref[m["c"]][1]), u.num(m.get("o")) or z, u.num(m.get("h")) or z,
                            u.num(m.get("l")) or z, z, vol, round(vol * z / 1000, 2), round(z - y, 2)]
     return out
+
+
+def is_common(code, name):
+    """上市櫃一般股票：4 位數代號（排除 00 開頭的 ETF），並排除存託憑證（-DR）"""
+    return bool(STOCK_RE.match(code)) and not name.endswith("-DR")
 
 
 def write_day(path: Path, rec):
@@ -237,7 +242,7 @@ def build(key):
     ym = today[:7]
     db_rows = {}
     for code, rows in series.items():
-        if not STOCK_RE.match(code) or rows[-1][0] != today or len(rows) < 2:
+        if not is_common(code, names[code][0]) or rows[-1][0] != today or len(rows) < 2:
             continue
         t, y = indicators([r[1:] for r in rows])
         month = [r for r in rows if r[0].startswith(ym)]
@@ -257,7 +262,7 @@ def build(key):
     HIST_DIR.mkdir(parents=True)
     n = 0
     for code, rows in series.items():
-        if not STOCK_RE.match(code) or rows[-1][0] != today:
+        if not is_common(code, names[code][0]) or rows[-1][0] != today:
             continue
         u.save_json(HIST_DIR / f"{code}.enc.json", u.encrypt_json({
             "name": names[code][0], "market": names[code][1], "vol_unit": "張",

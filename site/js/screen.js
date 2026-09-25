@@ -141,8 +141,14 @@
     const sel = readSel(), mode = readMode();
     const md = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8)}`;
     view.innerHTML = `
-      <div class="section-title"><h2>篩選條件</h2>
-        <span class="muted small">今天 ${md(db.today)}${db.provisional ? "（盤後暫定，22:00 更新為官方資料）" : ""}／昨天 ${md(db.yesterday)}｜${Object.keys(db.rows).length} 檔上市櫃股票</span></div>
+      <div class="scr-status card">
+        <div>
+          <b>資料庫</b>　今天 ${md(db.today)}${db.provisional ? "（盤後暫定）" : ""}／昨天 ${md(db.yesterday)}
+          <small>上市櫃一般股票 ${Object.keys(db.rows).length} 檔（不含 ETF、存託憑證）｜更新時間 ${esc(db.updated)}</small>
+        </div>
+        <button type="button" class="btn-primary scr-update">立即更新資料庫</button>
+      </div>
+      <div class="section-title"><h2>篩選條件</h2></div>
       <article class="card scr-panel">
         <div class="scr-mode" role="radiogroup" aria-label="多個條件的組合方式">
           <label><input type="radio" name="scrMode" value="all" ${mode === "all" ? "checked" : ""}> 符合全部勾選條件</label>
@@ -159,7 +165,7 @@
         <button type="button" class="btn-primary scr-go" hidden>查看結果</button>
       </article>
       <div id="scrResult"></div>
-      <p class="muted small note">資料庫每日 13:40（盤後暫定）與 22:00（官方收盤）更新。指標公式與技術分析頁相同：KD 9 日、RSI 6／12 日、MACD 12／26／9、布林 20 日 ±2 標準差。</p>`;
+      <p class="muted small note">資料庫每日 13:40（盤後暫定）與 22:00（官方收盤）自動更新，也可按上方「立即更新資料庫」或頁首 ☁ 按鈕手動更新。指標公式與技術分析頁相同：KD 9 日、RSI 6／12 日、MACD 12／26／9、布林 20 日 ±2 標準差。</p>`;
 
     view.querySelector(".scr-groups").addEventListener("change", () => {
       const s = [...view.querySelectorAll(".scr-item input:checked")].map((i) => i.value);
@@ -177,6 +183,10 @@
       try { localStorage.setItem(SEL_KEY, "[]"); } catch (e) { /* ignore */ }
       sortBy = null;
       renderResults(view);
+    });
+    view.querySelector(".scr-update").addEventListener("click", () => {
+      if (App.isUpdating()) { App.toast("已有更新在進行中，請稍候"); return; }
+      if (confirm("要立即向交易所抓取最新資料並更新資料庫嗎？\n（約需 3～5 分鐘；收盤前為前一交易日資料，13:30 收盤後為盤後暫定，官方收盤資料約傍晚公布）")) App.runUpdate();
     });
     view.querySelector(".scr-go").addEventListener("click", () => view.querySelector("#scrResult").scrollIntoView({ behavior: "smooth", block: "start" }));
     view.querySelector("#scrResult").addEventListener("click", (e) => {

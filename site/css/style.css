@@ -537,3 +537,7 @@ a.action-btn { text-decoration: none; }
   .scr-item { font-size: 14px; padding: 5px 0; }
   .scr-item small { display: none; }
 }
+.scr-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
+.scr-status small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.scr-status .btn-primary { padding: 9px 16px; font-size: 15px; }
+@media (max-width: 520px) { .scr-status .btn-primary { width: 100%; } }
