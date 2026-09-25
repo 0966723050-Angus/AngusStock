@@ -4,3 +4,5 @@ __pycache__/
 secrets/
 *.log
 cache/
+site/data/screen.enc.json
+site/data/hist/

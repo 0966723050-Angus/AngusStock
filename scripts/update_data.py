@@ -718,6 +718,18 @@ def main():
     home["updated"] = now.strftime("%Y-%m-%d %H:%M")
     state["home"] = home
 
+    # 全市場日資料（股票篩選資料庫、非自選股技術分析）：需約一年的交易日曆
+    try:
+        import market_db
+        if len(state.get("tse_idx", {})) < market_db.KEEP_DAYS + 10:
+            update_index_history(state, day, 14)
+        mdays = [d for d in sorted(state["tse_idx"]) if d <= day.isoformat()]
+        market_db.update(mdays + [day.isoformat()], day)
+    except Exception as e:  # noqa: BLE001  失敗不影響其他資料
+        import traceback
+        traceback.print_exc()
+        print("  ! 全市場日資料更新失敗：", e)
+
     for k in ("tse_idx", "otc_idx", "tse_mkt", "otc_mkt"):
         prune(state[k], 400)
     for k in ("tse_inst", "otc_inst", "tse_margin", "otc_margin"):

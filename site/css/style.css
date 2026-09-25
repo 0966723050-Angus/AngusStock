@@ -507,3 +507,33 @@ a.action-btn { text-decoration: none; }
 .vp-form input[type=color] { width: 40px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; }
 .vp-form input[type=number] { width: 72px; font: inherit; font-size: 16px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); }
 .vp-form select { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); max-width: 190px; }
+
+/* ---------- 股票篩選 ---------- */
+.scr-panel { padding: 12px 14px 14px; margin-bottom: 18px; }
+.scr-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; font-size: 14px; }
+.scr-mode label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.scr-mode .btn-ghost { width: auto; margin-left: auto; padding: 5px 12px; font-size: 13px; }
+.scr-groups { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.scr-group { border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px 8px; margin: 0; min-width: 0; }
+.scr-group legend { font-weight: 800; color: var(--accent); padding: 0 6px; font-size: 14px; }
+.scr-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 2px; cursor: pointer; font-size: 14.5px; }
+.scr-item input { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--accent); }
+.scr-item small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.scr-tbl th, .scr-tbl td { white-space: nowrap; }
+.scr-tbl th[data-sort] { cursor: pointer; user-select: none; }
+.scr-tbl th.sorted { color: var(--accent); }
+.scr-tbl .stk { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; min-width: 96px; }
+.scr-tbl tbody tr:nth-child(even) td.stk { background: var(--surface-2); }
+.scr-tbl .stk a { color: var(--accent); text-decoration: none; }
+.scr-tbl .stk small { display: block; color: var(--muted); font-size: 11.5px; }
+.scr-tbl td.hit { font-weight: 600; }
+.scr-tbl td.miss { color: var(--muted); }
+.scr-go { display: block; width: 100%; margin-top: 12px; }
+#scrResult { scroll-margin-top: 64px; }
+@media (max-width: 600px) {
+  .scr-groups { grid-template-columns: 1fr; gap: 8px; }
+  .scr-group { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; padding: 4px 8px 6px; }
+  .scr-group legend { grid-column: 1 / -1; }
+  .scr-item { font-size: 14px; padding: 5px 0; }
+  .scr-item small { display: none; }
+}

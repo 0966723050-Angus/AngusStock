@@ -325,6 +325,10 @@
     const list = ((wl && wl.items) || Object.keys(data.stocks)).filter((c) => data.stocks[c]);
     let code = params.get("code") || "";
     if (!data.stocks[code]) code = code.toUpperCase();
+    // 非自選股（例如由股票篩選點入）：載入全市場個股日 K 檔，並放在下拉選單最上方
+    if (code && !data.stocks[code]) {
+      try { data.stocks[code] = await App.loadData(`hist/${code}`); list.unshift(code); } catch (e) { /* 無此股票 */ }
+    }
     if (!data.stocks[code]) code = list.find((c) => c !== "t00" && c !== "o00") || list[0];
     if (!code) { view.innerHTML = '<div class="card empty">尚無自選股資料</div>'; return; }
     const meta = data.stocks[code];
