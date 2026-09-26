@@ -541,3 +541,16 @@ a.action-btn { text-decoration: none; }
 .scr-status small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .scr-status .btn-primary { padding: 9px 16px; font-size: 15px; }
 @media (max-width: 520px) { .scr-status .btn-primary { width: 100%; } }
+
+/* 主力買賣超 */
+.tag.t4 { background: #ffd1e6; }
+.major-grid { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 8px 12px 12px; }
+@media (min-width: 700px) { .major-grid { grid-template-columns: 1fr 1fr; } }
+.major-card .info-tbl { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.major-cum th { color: #1f3fbf; }
+.major-cum td { color: var(--text); }
+.major-cum tr.c1 { background: #cfe8f7; } .major-cum tr.c2 { background: #a9f0d6; } .major-cum tr.c3 { background: #fdfd9a; }
+.major-cum tr.c4 { background: #d9f56b; } .major-cum tr.c5 { background: #f5d4f5; } .major-cum tr.c6 { background: #e8b08c; } .major-cum tr.c7 { background: #bff2bf; }
+:root[data-theme="dark"] .major-cum tr { background: var(--surface-2) !important; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .major-cum tr { background: var(--surface-2) !important; } }
+.major-cum td.up { color: var(--up); } .major-cum td.down { color: var(--down); }

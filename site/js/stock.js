@@ -54,14 +54,41 @@
     </article>`;
   }
 
+  // 累積買賣超：自圖表起始日起逐日加總，緊接在當日買賣超下方
   const SERIES = [
     { i: 1, title: "外資買賣超", tag: "t1" },
-    { i: 2, title: "投信買賣超", tag: "t2" },
-    { i: 3, title: "自營商買賣超", tag: "t3" },
-    // 累積買賣超：自圖表起始日起逐日加總
     { i: 1, title: "外資累積買賣超", tag: "t1", cum: true, color: "#ff3fa0" },
+    { i: 2, title: "投信買賣超", tag: "t2" },
     { i: 2, title: "投信累積買賣超", tag: "t2", cum: true, color: "#f5b800" },
+    { i: 3, title: "自營商買賣超", tag: "t3" },
   ];
+  // 主力（買超前 15 名分點 − 賣超前 15 名分點）；資料列轉為 [日期, 淨額, -, -, 收盤] 以共用繪圖函式
+  const MAJOR = [
+    { i: 1, title: "主力買賣超", tag: "t4", major: true },
+    { i: 1, title: "主力累積買賣超", tag: "t4", major: true, cum: true, color: "#ff3fa0", noPrice: true },
+  ];
+
+  function majorCard(s) {
+    const m = s.major_sum;
+    if (!m) return '<article class="card"><div class="chart-title"><span class="tag t4">主力買賣超</span></div><div class="empty">主力資料準備中（新加入的股票會在下次更新時回補近 6 個月）</div></article>';
+    const cumRow = (n, cls) => (m.cum[n] == null ? "" : `<tr class="${cls}"><th>累計${n}日</th><td class="${m.cum[n] > 0 ? "up" : m.cum[n] < 0 ? "down" : ""}">${fmt(m.cum[n], 0)}</td></tr>`);
+    return `
+      <article class="card major-card">
+        <div class="chart-title"><span class="tag t4">主力買賣超</span><span class="muted small">資料日 ${esc(m.date)}｜單位：張｜買超前 15 名 − 賣超前 15 名分點</span></div>
+        <div class="major-grid">
+          <table class="info-tbl major-now">
+            <tbody>
+              <tr class="b1"><th>今日淨買賣超</th><td class="${m.net > 0 ? "up" : m.net < 0 ? "down" : ""}">${sgn(m.net, 0)}</td></tr>
+              <tr><th>今日成交量</th><td>${fmt(m.vol, 0)}</td></tr>
+              <tr class="b1"><th>比例（淨買賣超／成交量）</th><td class="${m.ratio > 0 ? "up" : m.ratio < 0 ? "down" : ""}">${m.ratio == null ? "--" : sgn(m.ratio) + "%"}</td></tr>
+            </tbody>
+          </table>
+          <table class="info-tbl major-cum">
+            <tbody>${cumRow(5, "c1")}${cumRow(10, "c2")}${cumRow(15, "c3")}${cumRow(20, "c4")}${cumRow(30, "c5")}${cumRow(60, "c6")}${cumRow(90, "c7")}</tbody>
+          </table>
+        </div>
+      </article>`;
+  }
 
   function drawChart(el, chart, x) {
     const idx = x.i;
@@ -73,7 +100,7 @@
     const px = chart.map((r) => r[4]);
     const up = css("--up"), down = css("--down"), line = css("--line");
     const pxv = px.filter((v) => v != null);
-    const pmin = Math.min(...pxv), pmax = Math.max(...pxv), pad = (pmax - pmin) * 0.1 || 1;
+    const pmin = pxv.length ? Math.min(...pxv) : 0, pmax = pxv.length ? Math.max(...pxv) : 1, pad = (pmax - pmin) * 0.1 || 1;
     const muted = { color: css("--muted"), fontSize: 11 };
     c.setOption({
       animation: false,
@@ -83,7 +110,7 @@
         backgroundColor: css("--surface"), borderColor: css("--border"), textStyle: { color: css("--text"), fontSize: 12 },
         formatter: (ps) => {
           const i = ps[0].dataIndex;
-          return `<b>${dates[i]}</b><br>${x.cum ? "累積買賣超" : "買賣超"} <b style="color:${vals[i] >= 0 ? up : down}">${sgn(vals[i], 0)}</b> 張<br>收盤價 <b>${fmt(px[i])}</b>`;
+          return `<b>${dates[i]}</b><br>${x.cum ? "累積買賣超" : "買賣超"} <b style="color:${vals[i] >= 0 ? up : down}">${sgn(vals[i], 0)}</b> 張` + (x.noPrice ? "" : `<br>收盤價 <b>${fmt(px[i])}</b>`);
         },
       },
       xAxis: {
@@ -98,9 +125,10 @@
       ],
       series: [
         x.cum
-          ? { name: "累積買賣超", type: "line", data: vals, smooth: true, symbol: "none", emphasis: { disabled: true }, lineStyle: { width: 2, color: x.color }, itemStyle: { color: x.color } }
+          ? { name: "累積買賣超", type: "line", data: vals, smooth: true, symbol: "none", emphasis: { disabled: true }, lineStyle: { width: 2, color: x.color }, itemStyle: { color: x.color },
+              markLine: x.noPrice ? { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: css("--text"), width: 1.5, type: "solid" }, data: [{ yAxis: 0 }] } : undefined }
           : { name: "買賣超", type: "bar", data: vals.map((v) => ({ value: v, itemStyle: { color: v >= 0 ? up : down } })), barMaxWidth: 8 },
-        { name: "股價", type: "line", yAxisIndex: 1, data: px, smooth: true, symbol: "none", emphasis: { disabled: true }, lineStyle: { width: 2, color: line }, itemStyle: { color: line } },
+        ...(x.noPrice ? [] : [{ name: "股價", type: "line", yAxisIndex: 1, data: px, smooth: true, symbol: "none", emphasis: { disabled: true }, lineStyle: { width: 2, color: line }, itemStyle: { color: line } }]),
       ],
     });
   }
@@ -146,10 +174,18 @@
               <div class="chart-title"><span class="tag ${x.tag}">${x.title}</span><span class="muted small">單位：張｜藍線：收盤價${x.cum ? `｜自 ${s.chart.length ? s.chart[0][0].slice(5).replace("-", "/") : ""} 起累計` : ""}</span></div>
               <div class="chart inst-chart" data-k="${k}"></div>
             </article>`).join("")}
+          ${majorCard(s)}
+          ${s.major && s.major.length ? MAJOR.map((x, k) => `
+            <article class="card">
+              <div class="chart-title"><span class="tag ${x.tag}">${x.title}</span><span class="muted small">單位：張${x.noPrice ? `｜自 ${s.major[0][0].slice(5).replace("-", "/")} 起累計` : "｜藍線：收盤價"}</span></div>
+              <div class="chart inst-chart" data-m="${k}"></div>
+            </article>`).join("") : ""}
         </div>
       </div>
       <p class="muted small note">資料時間 ${esc(data.updated)}。投信、自營商持股比率官方未公布；EPS(Y) 為近四季合計；量增幅為與前一交易日成交量比較；買賣超與累積買賣超期間為最新資料日往前 6 個月。</p>`;
-    view.querySelectorAll(".inst-chart").forEach((el) => {
+    const majorRows = (s.major || []).map((r) => [r[0], r[1], null, null, r[2]]);
+    view.querySelectorAll(".inst-chart[data-m]").forEach((el) => drawChart(el, majorRows, MAJOR[+el.dataset.m]));
+    view.querySelectorAll(".inst-chart[data-k]").forEach((el) => {
       if (s.chart.length) drawChart(el, s.chart, SERIES[+el.dataset.k]);
       else el.outerHTML = '<div class="empty">尚無買賣超歷史資料</div>';
     });

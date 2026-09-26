@@ -309,6 +309,13 @@ def build_stocks(key, items, quote_rows, trading_days, refresh_fund):
     all_dates = sorted(daily)
     cutoff = months_before(all_dates[-1]) if all_dates else ""
     dates = [d for d in all_dates if d >= cutoff]
+    # 主力買賣超（富邦 e-Broker；僅自選股）
+    import major
+    stock_codes = [c for c in items if c not in u.INDEX_ITEMS and c in quote_rows]
+    try:
+        major.update(stock_codes, [d for d in trading_days if d >= cutoff], cutoff)
+    except Exception as e:  # noqa: BLE001
+        print("  ! 主力買賣超更新失敗：", e)
     out = {}
     for code in items:
         if code in u.INDEX_ITEMS:
@@ -325,6 +332,21 @@ def build_stocks(key, items, quote_rows, trading_days, refresh_fund):
                 prev_vol = daily[d][code][4]
                 break
         chart = [[d, *daily[d][code][:4]] for d in dates if code in daily[d]]
+        # 主力：[[日期, 淨買賣超, 收盤]]，並計算今日比例與累計
+        mj = major.load(code)
+        close_of = {d: daily[d][code][3] for d in dates if code in daily[d]}
+        vol_of = {d: daily[d][code][4] for d in dates if code in daily[d]}
+        if qdate:
+            close_of.setdefault(qdate, price)
+            vol_of.setdefault(qdate, vol)
+        mseries = [[d, mj[d], close_of.get(d)] for d in sorted(mj) if d >= cutoff]
+        msum = None
+        if mseries:
+            last_d, last_v = mseries[-1][0], mseries[-1][1]
+            lv = vol_of.get(last_d)
+            vals = [r[1] for r in mseries]
+            msum = {"date": last_d, "net": last_v, "vol": lv, "ratio": pct(last_v, lv) if lv else None,
+                    "cum": {n: sum(vals[-n:]) for n in (5, 10, 15, 20, 30, 60, 90) if len(vals) >= n}}
         out[code] = {
             "name": name, "market": mkt, "industry": fd.get("industry"), "date": qdate,
             "price": price, "chg": chg, "chg_pct": pct(chg, prev),
@@ -333,7 +355,7 @@ def build_stocks(key, items, quote_rows, trading_days, refresh_fund):
             **{k: fd.get(k) for k in ("holders", "holders_date", "directors_pct", "foreign_pct", "eps_q", "eps_y",
                                       "eps_period", "pe", "pb", "rev_ym", "rev_mom", "rev_yoy", "div_period",
                                       "cash", "stock", "ex_div", "ex_right", "pay_date")},
-            "chart": chart,
+            "chart": chart, "major": mseries, "major_sum": msum,
         }
     u.save_json(STOCKS_FILE, u.encrypt_json({"updated": dt.datetime.now(u.TZ).strftime("%Y-%m-%d %H:%M"), "stocks": out}, key))
     print(f"  個股資訊已更新：{len(out)} 檔，圖表 {len(dates)} 個交易日")
