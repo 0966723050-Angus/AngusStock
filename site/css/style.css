@@ -573,3 +573,4 @@ a.action-btn { text-decoration: none; }
 .lg-dot { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
 .lg-dot.round { width: 9px; height: 9px; border-radius: 50%; }
 .ta-info small { color: var(--muted); font-size: 11px; }
+.week-info .ti { white-space: normal; }

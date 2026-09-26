@@ -30,10 +30,10 @@
     return { mid, up, lo };
   }
   // 由最新日期往前 6 個月的起始索引
-  function sixMonthStart(dates) {
+  function sixMonthStart(dates, months = 6) {
     const [y, m, dd] = dates[dates.length - 1].split("-").map(Number);
-    let yy = y, mm = m - 6;
-    if (mm < 1) { mm += 12; yy -= 1; }
+    let yy = y, mm = m - months;
+    while (mm < 1) { mm += 12; yy -= 1; }
     const maxd = new Date(yy, mm, 0).getDate(); // 該月天數（無此日時取月底）
     const p2 = (n) => String(n).padStart(2, "0");
     const cut = `${yy}-${p2(mm)}-${p2(Math.min(dd, maxd))}`;
@@ -51,8 +51,8 @@
   const THU = Date.UTC(2026, 0, 1); // 2026-01-01 為週四，作為週期基準
   const cycleOf = (iso) => Math.floor((Date.parse(iso + "T00:00:00Z") - THU) / (7 * DAY));
 
-  function weekCycle(d, c, start) {
-    const dates = d.slice(start), close = c.slice(start);
+  function weekCycle(d, c, h, l, start) {
+    const dates = d.slice(start), close = c.slice(start), high = h.slice(start), low = l.slice(start);
     const cyc = dates.map(cycleOf);
     // 週起點：每個週期的第一個交易日（通常為週四；週四休市則為週五）。期間第一天只有剛好是週四才標示
     const isThu = (iso) => new Date(iso + "T00:00:00Z").getUTCDay() === 4;
@@ -64,13 +64,14 @@
     const wk = close.filter((_, i) => cyc[i] === target);
     const wkDates = dates.filter((_, i) => cyc[i] === target);
     const weekKey = wk.length ? (Math.max(...wk) + Math.min(...wk)) / 2 : null;
-    // 大盤關鍵價位：期間內最高、最低收盤的平均（同價取最接近今天者）
+    // 大盤關鍵價位：期間內盤中最高價與盤中最低價的平均（同價取最接近今天者）
     let hi = 0, lo = 0;
-    close.forEach((x, i) => { if (x >= close[hi]) hi = i; if (x <= close[lo]) lo = i; });
-    const mktKey = (close[hi] + close[lo]) / 2;
+    high.forEach((x, i) => { if (x >= high[hi]) hi = i; });
+    low.forEach((x, i) => { if (x <= low[lo]) lo = i; });
+    const mktKey = (high[hi] + low[lo]) / 2;
     return { dates, close, first, weekKey, wkFrom: wkDates[0], wkTo: wkDates[wkDates.length - 1],
       wkHi: wk.length ? Math.max(...wk) : null, wkLo: wk.length ? Math.min(...wk) : null,
-      mktKey, hiDate: dates[hi], hiVal: close[hi], loDate: dates[lo], loVal: close[lo] };
+      mktKey, hiDate: dates[hi], hiVal: high[hi], loDate: dates[lo], loVal: low[lo] };
   }
 
   function drawWeek(box, info, W) {
@@ -84,11 +85,11 @@
       info.innerHTML = `<span class="ti-date">${W.dates[i]}${W.first[i] ? "（週起點）" : ""}</span>` +
         `<span class="ti"><i style="background:${W.first[i] ? orange : blue}"></i>收盤 <b>${fmt(W.close[i])}</b></span>` +
         `<span class="ti"><i style="background:${red}"></i>週關鍵價位 <b>${fmt(W.weekKey)}</b> <small>${W.wkFrom ? md(W.wkFrom) + "～" + md(W.wkTo) : ""}</small></span>` +
-        `<span class="ti"><i style="background:${green}"></i>大盤關鍵價位 <b>${fmt(W.mktKey)}</b> <small>高 ${md(W.hiDate)} ${fmt(W.hiVal, 0)}／低 ${md(W.loDate)} ${fmt(W.loVal, 0)}</small></span>`;
+        `<span class="ti"><i style="background:${green}"></i>大盤關鍵價位 <b>${fmt(W.mktKey)}</b> <small>盤中高 ${md(W.hiDate)} ${fmt(W.hiVal, 0)}／盤中低 ${md(W.loDate)} ${fmt(W.loVal, 0)}</small></span>`;
     };
     c.setOption({
       animation: false,
-      grid: { left: 8, right: 60, top: 16, bottom: 30 },
+      grid: { left: 18, right: 60, top: 16, bottom: 30 },
       tooltip: { trigger: "axis", showContent: false, axisPointer: { type: "line", lineStyle: { color: css("--muted"), type: "dashed" } } },
       xAxis: { type: "category", data: W.dates, boundaryGap: false, axisTick: { show: false }, axisLine: { lineStyle: { color: css("--border") } },
         axisLabel: { ...muted, formatter: (v) => md(v) } },
@@ -149,14 +150,14 @@
         </div>
         ${title === "加權指數" ? `
         <div class="card idxk-card idxk-week">
-          <div class="chart-title"><span class="tag t1">週循環</span><span class="muted small">近半年收盤｜週四起點、週三終點</span></div>
+          <div class="chart-title"><span class="tag t1">週循環</span><span class="muted small">近 4 個月收盤｜週四起點、週三終點</span></div>
           <div class="ta-info week-info"></div>
           <div class="chart week-chart"></div>
           <div class="week-legend">
             <span><i class="lg-dot" style="background:#e53935"></i>週關鍵價位（最新一週收盤最高＋最低）÷ 2</span>
             <span><i class="lg-dot" style="background:#3f51b5"></i>收盤</span>
             <span><i class="lg-dot round" style="background:#f08a24"></i>週起點（週四）</span>
-            <span><i class="lg-dot" style="background:#2ecc40"></i>大盤關鍵價位（期間最高＋最低收盤）÷ 2</span>
+            <span><i class="lg-dot" style="background:#2ecc40"></i>大盤關鍵價位（近 4 個月盤中最高＋盤中最低）÷ 2</span>
           </div>
         </div>` : ""}
         <p class="muted small note">預設顯示最新日期往前 6 個月，可用 ＋／－ 或下方拖曳條調整；成交量為成交金額（億元）。布林：20 日 ±2 標準差。</p>
@@ -238,7 +239,7 @@
     draw();
     let weekChart = null;
     const wBox = el.querySelector(".week-chart");
-    if (wBox) weekChart = drawWeek(wBox, el.querySelector(".week-info"), weekCycle(t.d, t.c, sixMonthStart(t.d)));
+    if (wBox) weekChart = drawWeek(wBox, el.querySelector(".week-info"), weekCycle(t.d, t.c, t.h, t.l, sixMonthStart(t.d, 4)));
 
     const onResize = () => { if (chart) chart.resize(); if (weekChart) weekChart.resize(); };
     window.addEventListener("resize", onResize);
