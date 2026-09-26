@@ -625,6 +625,15 @@ def update_watch(key, blob_text=None, full=False):
     polite()
     live = fetch_mis_quotes(items, {c: v[1] for c, v in rows.items()})
     rows.update(live)
+    # 台指期近月（一般＋夜盤合併）：一律提供，可搜尋、可加入自選股
+    try:
+        import futures
+        futures.update()
+        fq = futures.quote()
+        if fq:
+            rows[futures.CODE] = fq
+    except Exception as e:  # noqa: BLE001
+        print("  ! 台指期更新失敗：", e)
     for code, (name, _) in INDEX_ITEMS.items():  # 指數無論是否即時取得都可搜尋
         rows.setdefault(code, [name, "idx", None, None, None, None, None, None, None])
     now = dt.datetime.now(TZ)

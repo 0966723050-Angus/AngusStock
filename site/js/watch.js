@@ -40,9 +40,11 @@
     const pct = prev ? (chg / prev) * 100 : null;
     const amp = prev && high != null && low != null ? ((high - low) / prev) * 100 : null;
     const isIdx = code === "t00" || code === "o00";
+    const isFut = q[1] === "fut";
     const stale = date && quotes.latest && date < quotes.latest ? `<span class="stale">${+date.slice(5, 7)}/${+date.slice(8)}</span>` : "";
-    return `<tr${isIdx ? "" : ` class="link" data-code="${esc(code)}" tabindex="0" role="link" aria-label="${esc(name)} 個股資訊"`}>
-      <td class="stk"><b>${esc(name)}</b><small>${isIdx ? "指數" : esc(code)}${stale}</small></td>
+    // 期貨沒有個股資訊，點選直接開啟技術分析
+    return `<tr${isIdx ? "" : ` class="link" data-code="${esc(code)}" data-page="${isFut ? "tech" : "stock"}" tabindex="0" role="link" aria-label="${esc(name)} ${isFut ? "技術分析" : "個股資訊"}"`}>
+      <td class="stk"><b>${esc(name)}</b><small>${isIdx ? "指數" : isFut ? "期貨・日＋夜" : esc(code)}${stale}</small></td>
       <td class="num ${cls(chg)}"><b>${fmt(price, priceDigits(price))}</b></td>
       <td class="num ${cls(chg)}">${chg > 0 ? "▲" : chg < 0 ? "▼" : ""}${chg == null ? "--" : fmt(Math.abs(chg), priceDigits(price) === 0 && chg % 1 === 0 ? 0 : 2)}</td>
       <td class="num ${cls(chg)}">${sgn(pct)}</td>
@@ -53,7 +55,9 @@
 
   function renderTable(view, syncing) {
     view.innerHTML = `
-      <div class="section-title"><h2>自選股行情</h2><span class="muted small">報價時間 ${esc(quotes.updated || "--")}${syncing ? "｜<b>清單同步中</b>" : ""}</span></div>
+      <div class="section-title"><h2>自選股行情</h2>
+        <span class="watch-meta"><span class="muted small">報價時間 ${esc(quotes.updated || "--")}${syncing ? "｜<b>清單同步中</b>" : ""}</span>
+        <button type="button" class="btn-ghost watch-update">立即更新報價</button></span></div>
       <article class="card">
         <div class="tbl-wrap">
           <table class="tbl watch-tbl">
@@ -161,7 +165,7 @@
         .slice(0, 50);
       ul.innerHTML = hits.map((x) => {
         const on = picked.includes(x.code);
-        const mkt = x.code === "t00" || x.code === "o00" ? "指數" : x.mkt === "otc" ? "上櫃" : "上市";
+        const mkt = x.code === "t00" || x.code === "o00" ? "指數" : x.mkt === "fut" ? "期貨（一般＋夜盤）" : x.mkt === "otc" ? "上櫃" : "上市";
         return `<li><span class="nm">${esc(x.name)}<small>${x.code.length === 3 ? "" : esc(x.code) + "・"}${mkt}</small></span>
           <button type="button" class="pick ${on ? "on" : ""}" data-code="${esc(x.code)}" aria-pressed="${on}">${on ? "✓ 已加入" : "＋ 加入"}</button></li>`;
       }).join("") || '<li class="hint">找不到符合的股票</li>';
@@ -214,7 +218,13 @@
     });
     App.setAction(btn);
     renderTable(view, wl.syncing);
-    const go = (tr) => { if (tr) location.hash = "#/stock?code=" + encodeURIComponent(tr.dataset.code); };
+    const go = (tr) => { if (tr) location.hash = `#/${tr.dataset.page || "stock"}?code=` + encodeURIComponent(tr.dataset.code); };
+    // 立即更新報價：只更新自選股報價（含台指期夜盤），約 1 分鐘
+    view.querySelector(".watch-update").addEventListener("click", async () => {
+      if (App.isUpdating()) { App.toast("已有更新在進行中，請稍候"); return; }
+      const blob = await App.encryptJSON({ v: 1, items, ts: Date.now() });
+      App.runUpdate({ inputs: { watchlist: JSON.stringify(blob) } });
+    });
     view.addEventListener("click", (e) => go(e.target.closest("tr.link")));
     view.addEventListener("keydown", (e) => { if (e.key === "Enter") go(e.target.closest("tr.link")); });
   }

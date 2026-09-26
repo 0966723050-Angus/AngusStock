@@ -348,6 +348,8 @@
       } catch (e) { liveNote = "證交所連線失敗，使用網站資料"; }
     } else if (meta.market === "otc") {
       liveNote = "上櫃資料來源：櫃買中心（網站排程更新）";
+    } else if (meta.market === "fut") {
+      liveNote = "期交所近月連續日K（一般＋夜盤合併）";
     }
     const t = compute(rows);
     let span = Math.min(DEFAULT_SPAN(), t.d.length);
@@ -357,7 +359,7 @@
     tech.className = "action-btn";
     tech.href = `#/stock?code=${encodeURIComponent(code)}`;
     tech.innerHTML = "<span>個股資訊</span>";
-    if (meta.market !== "idx") App.setAction(tech);
+    if (meta.market === "tse" || meta.market === "otc") App.setAction(tech);
     App.setUpdated(data.updated);
     document.title = `${meta.name} 技術分析｜Angus 股市`;
 

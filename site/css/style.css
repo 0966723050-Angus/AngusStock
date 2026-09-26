@@ -562,3 +562,5 @@ a.action-btn { text-decoration: none; }
 .idxk-body { padding: 12px 10px 24px; }
 .idxk-card { max-width: 1100px; margin: 0 auto; }
 .idxk-chart { height: 62vh; min-height: 380px; }
+.watch-meta { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.watch-meta .btn-ghost { width: auto; padding: 5px 12px; font-size: 13px; }

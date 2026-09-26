@@ -311,7 +311,7 @@ def build_stocks(key, items, quote_rows, trading_days, refresh_fund):
     dates = [d for d in all_dates if d >= cutoff]
     # 主力買賣超（富邦 e-Broker；僅自選股）
     import major
-    stock_codes = [c for c in items if c not in u.INDEX_ITEMS and c in quote_rows]
+    stock_codes = [c for c in items if c not in u.INDEX_ITEMS and c in quote_rows and quote_rows[c][1] != "fut"]
     try:
         major.update(stock_codes, [d for d in trading_days if d >= cutoff], cutoff)
     except Exception as e:  # noqa: BLE001
@@ -321,7 +321,7 @@ def build_stocks(key, items, quote_rows, trading_days, refresh_fund):
         if code in u.INDEX_ITEMS:
             continue
         q = quote_rows.get(code)
-        if not q:
+        if not q or q[1] == "fut":  # 期貨沒有個股資訊
             continue
         name, mkt, price, chg, high, low, vol, prev, qdate = q
         fd = fund.get(code, {})
@@ -446,6 +446,10 @@ def build_ohlc(key, items, quote_rows, state):
             continue
         q = quote_rows.get(code)
         if not q:
+            continue
+        if q[1] == "fut":
+            import futures
+            out[code] = {"name": q[0], "market": "fut", "vol_unit": "口", "rows": futures.series()}
             continue
         rows = update_hist(code, q[1], latest)
         out[code] = {"name": q[0], "market": q[1], "vol_unit": "張", "shares": fund.get(code, {}).get("shares"), "rows": rows}
