@@ -103,7 +103,7 @@
     const ama = c.map((x, i) => (dma[i] == null ? null : x - dma[i]));
     const amaMa5 = ama.map((_, i) => (i >= 4 && ama.slice(i - 4, i + 1).every((x) => x != null) ? ama.slice(i - 4, i + 1).reduce((a, b) => a + b, 0) / 5 : null));
     return {
-      d, o, h, l, c, v,
+      d, o, h, l, c, v, chg: rows.map((r) => (r[6] == null ? null : r[6])),
       ma5: TA.sma(c, 5), ma10: TA.sma(c, 10), ma20, ma50: TA.sma(c, 50), ma100: TA.sma(c, 100), dma, ama, amaMa5,
       vma5: TA.sma(v, 5), e12: TA.ema(c, 12), e26: TA.ema(c, 26), e13,
       boll: TA.boll(c), macd: TA.macd(c), kd: TA.kd(h, l, c), rsi6: TA.rsi(c, 6), rsi12: TA.rsi(c, 12),
@@ -234,7 +234,9 @@
     }));
     // 資訊列：日期、開高低收、成交量與各線數值
     c.__info = (i) => {
-      const pct = i > 0 ? ((t.c[i] - t.c[i - 1]) / t.c[i - 1]) * 100 : null;
+      // 期貨：漲跌依期交所公布值（與前一結算價比較）；其他：與前一日收盤比較
+      const pct = t.useChg && t.chg[i] != null ? (t.chg[i] / (t.c[i] - t.chg[i])) * 100
+        : i > 0 ? ((t.c[i] - t.c[i - 1]) / t.c[i - 1]) * 100 : null;
       const pc = pct == null ? "" : pct >= 0 ? "up" : "down";
       return `<span class="ti-date">${t.d[i]}</span>` +
         `<span class="ti">開 <b>${fmt(t.o[i])}</b></span><span class="ti">高 <b>${fmt(t.h[i])}</b></span>` +
@@ -349,9 +351,12 @@
     } else if (meta.market === "otc") {
       liveNote = "上櫃資料來源：櫃買中心（網站排程更新）";
     } else if (meta.market === "fut") {
-      liveNote = "期交所近月連續日K（一般＋夜盤合併）";
+      liveNote = code === "TXF1N"
+        ? "期交所近月連續日K（夜盤；日期為夜盤開始日，漲跌與前一結算價比較）"
+        : "期交所近月連續日K（日盤；漲跌與前一結算價比較）";
     }
     const t = compute(rows);
+    t.useChg = meta.market === "fut";
     let span = Math.min(DEFAULT_SPAN(), t.d.length);
     const ov = loadOverlays();
 

@@ -449,7 +449,7 @@ def build_ohlc(key, items, quote_rows, state):
             continue
         if q[1] == "fut":
             import futures
-            out[code] = {"name": q[0], "market": "fut", "vol_unit": "口", "rows": futures.series()}
+            out[code] = {"name": q[0], "market": "fut", "vol_unit": "口", "rows": futures.series(code)}
             continue
         rows = update_hist(code, q[1], latest)
         out[code] = {"name": q[0], "market": q[1], "vol_unit": "張", "shares": fund.get(code, {}).get("shares"), "rows": rows}

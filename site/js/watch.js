@@ -44,7 +44,7 @@
     const stale = date && quotes.latest && date < quotes.latest ? `<span class="stale">${+date.slice(5, 7)}/${+date.slice(8)}</span>` : "";
     // 期貨沒有個股資訊，點選直接開啟技術分析
     return `<tr${isIdx ? "" : ` class="link" data-code="${esc(code)}" data-page="${isFut ? "tech" : "stock"}" tabindex="0" role="link" aria-label="${esc(name)} ${isFut ? "技術分析" : "個股資訊"}"`}>
-      <td class="stk"><b>${esc(name)}</b><small>${isIdx ? "指數" : isFut ? "期貨・日＋夜" : esc(code)}${stale}</small></td>
+      <td class="stk"><b>${esc(name)}</b><small>${isIdx ? "指數" : isFut ? (code === "TXF1N" ? "期貨・夜盤" : "期貨・日盤") : esc(code)}${stale}</small></td>
       <td class="num ${cls(chg)}"><b>${fmt(price, priceDigits(price))}</b></td>
       <td class="num ${cls(chg)}">${chg > 0 ? "▲" : chg < 0 ? "▼" : ""}${chg == null ? "--" : fmt(Math.abs(chg), priceDigits(price) === 0 && chg % 1 === 0 ? 0 : 2)}</td>
       <td class="num ${cls(chg)}">${sgn(pct)}</td>
@@ -165,7 +165,7 @@
         .slice(0, 50);
       ul.innerHTML = hits.map((x) => {
         const on = picked.includes(x.code);
-        const mkt = x.code === "t00" || x.code === "o00" ? "指數" : x.mkt === "fut" ? "期貨（一般＋夜盤）" : x.mkt === "otc" ? "上櫃" : "上市";
+        const mkt = x.code === "t00" || x.code === "o00" ? "指數" : x.mkt === "fut" ? "期貨" : x.mkt === "otc" ? "上櫃" : "上市";
         return `<li><span class="nm">${esc(x.name)}<small>${x.code.length === 3 ? "" : esc(x.code) + "・"}${mkt}</small></span>
           <button type="button" class="pick ${on ? "on" : ""}" data-code="${esc(x.code)}" aria-pressed="${on}">${on ? "✓ 已加入" : "＋ 加入"}</button></li>`;
       }).join("") || '<li class="hint">找不到符合的股票</li>';
