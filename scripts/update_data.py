@@ -671,7 +671,8 @@ def main():
     if not (args.force or args.backfill) and not is_trading_day(day):
         print("今日未開盤，不更新。")
         return
-    update_index_history(state, day, 7 if args.backfill else 1)
+    # 指數日 K：首頁 K 線顯示半年，SMA200 需再往前 200 個交易日 → 保留約 18 個月
+    update_index_history(state, day, 18 if (args.backfill or len(state.get("tse_idx", {})) < 340) else 1)
     tdays = [d for d in sorted(state["tse_idx"]) if d <= day.isoformat()]
     update_inst_history(state, tdays[-(HISTORY_DAYS if args.backfill else 5):])
     need_margin = args.backfill or len(state.get("tse_margin", {})) < 20
@@ -716,6 +717,10 @@ def main():
     if top:
         home["top"] = top
 
+    # 首頁指數日 K：[日期, 開, 高, 低, 收, 成交金額(億)]
+    for mkt in ("tse", "otc"):
+        idx, mk = state.get(f"{mkt}_idx", {}), state.get(f"{mkt}_mkt", {})
+        home[f"{mkt}_daily"] = [[d, *idx[d], round((mk.get(d) or {}).get("val") or 0, 2)] for d in sorted(idx)[-380:]]
     home["updated"] = now.strftime("%Y-%m-%d %H:%M")
     state["home"] = home
 

@@ -554,3 +554,11 @@ a.action-btn { text-decoration: none; }
 :root[data-theme="dark"] .major-cum tr { background: var(--surface-2) !important; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .major-cum tr { background: var(--surface-2) !important; } }
 .major-cum td.up { color: var(--up); } .major-cum td.down { color: var(--down); }
+
+/* 首頁指數：點選開啟日 K */
+.idx-open { cursor: pointer; }
+.idx-k-link { font-size: 13px; font-weight: 700; color: var(--accent); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; }
+.card-head.idx-open:hover .idx-k-link { background: var(--accent); color: var(--accent-ink); }
+.idxk-body { padding: 12px 10px 24px; }
+.idxk-card { max-width: 1100px; margin: 0 auto; }
+.idxk-chart { height: 62vh; min-height: 380px; }

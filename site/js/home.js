@@ -32,9 +32,11 @@
     const rel = (a) => (a ? `<small class="${cls(a[0])}">${sgn(a[0])} / ${sgn(a[1])}%</small>` : "");
     return `
     <article class="card">
-      <div class="card-head"><h3>${title} ${md(d.date)}</h3><span class="muted small">昨收 ${fmt(d.prev)}</span></div>
+      <div class="card-head idx-open" role="button" tabindex="0" data-idx="${title}" title="點選查看近半年日 K 線">
+        <h3>${title} ${md(d.date)}</h3><span class="idx-k-link">日K線 ›</span>
+      </div>
       <div class="card-body">
-        <div class="quote">
+        <div class="quote idx-open" role="button" tabindex="0" data-idx="${title}">
           <span class="price ${cls(chg[0])}">${fmt(d.close)}</span>
           <span class="chg ${cls(chg[0])}">${chg[0] > 0 ? "▲" : chg[0] < 0 ? "▼" : ""} ${sgn(chg[0])} (${sgn(chg[1])}%)</span>
         </div>
@@ -362,6 +364,10 @@
         ${marginCard("上櫃融資融券", "otc", d.margin_otc)}
       </div>
     `;
+    // 點選指數名稱或價格 → 開啟近半年日 K
+    const openK = (el) => { if (el) IdxK.open(el.dataset.idx, el.dataset.idx === "加權指數" ? d.tse_daily : d.otc_daily); };
+    view.addEventListener("click", (e) => openK(e.target.closest(".idx-open")));
+    view.addEventListener("keydown", (e) => { if (e.key === "Enter") openK(e.target.closest(".idx-open")); });
     drawIndexChart(view.querySelector('[data-chart="加權指數"]'), d.tse || {});
     drawIndexChart(view.querySelector('[data-chart="櫃買指數"]'), d.otc || {});
     drawMarginChart(view.querySelector('[data-margin="tse"]'), d.margin_tse, view.querySelector('[data-mg="tse"]'));
