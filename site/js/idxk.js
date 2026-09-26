@@ -50,7 +50,6 @@
   const DAY = 86400000;
   const THU = Date.UTC(2026, 0, 1); // 2026-01-01 為週四，作為週期基準
   const cycleOf = (iso) => Math.floor((Date.parse(iso + "T00:00:00Z") - THU) / (7 * DAY));
-  const isWed = (iso) => new Date(iso + "T00:00:00Z").getUTCDay() === 3;
 
   function weekCycle(d, c, start) {
     const dates = d.slice(start), close = c.slice(start);
@@ -58,9 +57,10 @@
     // 週起點：每個週期的第一個交易日（通常為週四；週四休市則為週五）。期間第一天只有剛好是週四才標示
     const isThu = (iso) => new Date(iso + "T00:00:00Z").getUTCDay() === 4;
     const first = cyc.map((x, i) => (i === 0 ? isThu(dates[0]) : x !== cyc[i - 1]));
-    // 週關鍵價位：最近一個「已走完」的週期（最新一日為週三時即包含本週）之收盤最高、最低平均
+    // 週關鍵價位：最新一週（含尚未走完的本週）收盤最高、最低平均
+    // 週四當天只有一筆 → 即週四收盤；週五 → 週四、週五的平均；依此類推至週三
     const last = dates.length - 1;
-    const target = isWed(dates[last]) ? cyc[last] : cyc[last] - 1;
+    const target = cyc[last];
     const wk = close.filter((_, i) => cyc[i] === target);
     const wkDates = dates.filter((_, i) => cyc[i] === target);
     const weekKey = wk.length ? (Math.max(...wk) + Math.min(...wk)) / 2 : null;
@@ -153,7 +153,7 @@
           <div class="ta-info week-info"></div>
           <div class="chart week-chart"></div>
           <div class="week-legend">
-            <span><i class="lg-dot" style="background:#e53935"></i>週關鍵價位（最近一個完整週期收盤最高＋最低）÷ 2</span>
+            <span><i class="lg-dot" style="background:#e53935"></i>週關鍵價位（最新一週收盤最高＋最低）÷ 2</span>
             <span><i class="lg-dot" style="background:#3f51b5"></i>收盤</span>
             <span><i class="lg-dot round" style="background:#f08a24"></i>週起點（週四）</span>
             <span><i class="lg-dot" style="background:#2ecc40"></i>大盤關鍵價位（期間最高＋最低收盤）÷ 2</span>
