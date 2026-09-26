@@ -564,3 +564,12 @@ a.action-btn { text-decoration: none; }
 .idxk-chart { height: 62vh; min-height: 380px; }
 .watch-meta { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .watch-meta .btn-ghost { width: auto; padding: 5px 12px; font-size: 13px; }
+
+/* 週循環 */
+.idxk-week { margin-top: 14px; }
+.week-chart { height: 46vh; min-height: 320px; }
+.week-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 4px 14px 12px; font-size: 12px; color: var(--text-2); }
+.week-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lg-dot { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.lg-dot.round { width: 9px; height: 9px; border-radius: 50%; }
+.ta-info small { color: var(--muted); font-size: 11px; }
