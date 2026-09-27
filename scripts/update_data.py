@@ -9,6 +9,7 @@
 """
 import argparse
 import base64
+import gzip
 import datetime as dt
 import json
 import os
@@ -50,16 +51,18 @@ def data_key() -> bytes:
 def encrypt_json(obj, key: bytes) -> dict:
     iv = os.urandom(12)
     c = AES.new(key, AES.MODE_GCM, nonce=iv)
-    body, tag = c.encrypt_and_digest(json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode())
+    # 先 gzip 再加密：加密後的資料無法再由伺服器壓縮，先壓縮可大幅縮小下載量（瀏覽器以 DecompressionStream 解壓）
+    raw = gzip.compress(json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode(), compresslevel=9, mtime=0)
+    body, tag = c.encrypt_and_digest(raw)
     ct = body + tag  # 與 WebCrypto AES-GCM 相同格式（密文 + 16 bytes tag）
-    return {"v": 1, "iv": base64.b64encode(iv).decode(), "ct": base64.b64encode(ct).decode()}
+    return {"v": 1, "z": "gzip", "iv": base64.b64encode(iv).decode(), "ct": base64.b64encode(ct).decode()}
 
 
 def decrypt_json(blob: dict, key: bytes):
     raw = base64.b64decode(blob["ct"])
     c = AES.new(key, AES.MODE_GCM, nonce=base64.b64decode(blob["iv"]))
     pt = c.decrypt_and_verify(raw[:-16], raw[-16:])
-    return json.loads(pt)
+    return json.loads(gzip.decompress(pt) if blob.get("z") == "gzip" else pt)
 
 
 def load_state(key):

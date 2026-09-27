@@ -10,7 +10,7 @@
 
   // 資料庫欄位索引（與 scripts/market_db.py FIELDS 相同順序）
   const F = { p: 0, chg: 1, pct: 2, vol: 3, val: 4, amp: 5, s5: 6, s10: 7, s20: 8, s60: 9, s100: 10,
-    dif: 11, macd: 12, osc: 13, bu: 14, bm: 15, bl: 16, bw: 17, r6: 18, r12: 19, k: 20, d: 21, j: 22 };
+    dif: 11, macd: 12, osc: 13, bu: 14, bm: 15, bl: 16, bw: 17, r6: 18, r12: 19, k: 20, d: 21, j: 22, s50: 23 };
   const ok = (...v) => v.every((x) => x != null && isFinite(x));
   const spread = (a) => (ok(a.s5, a.s10, a.s20, a.s60) ? ((Math.max(a.s5, a.s10, a.s20, a.s60) - Math.min(a.s5, a.s10, a.s20, a.s60)) / Math.min(a.s5, a.s10, a.s20, a.s60)) * 100 : null);
   const tangled = (a) => { const s = spread(a); return s != null && s <= 5; };
@@ -37,11 +37,11 @@
         test: (t, y) => ok(t.j, y.j) && y.j >= 0 && t.j < 0, show: (t, y) => `${fmt(y.j, 1)} → ${fmt(t.j, 1)}`, sort: (t) => -t.j },
     ] },
     { title: "均線排列", items: [
-      { id: "ma_bull", label: "多頭排列", note: "SMA5＞SMA10＞SMA20＞SMA60＞SMA100",
-        test: (t) => ok(t.s5, t.s10, t.s20, t.s60, t.s100) && t.s5 > t.s10 && t.s10 > t.s20 && t.s20 > t.s60 && t.s60 > t.s100,
+      { id: "ma_bull", label: "多頭排列", note: "SMA5＞SMA10＞SMA20＞SMA50＞SMA100",
+        test: (t) => ok(t.s5, t.s10, t.s20, t.s50, t.s100) && t.s5 > t.s10 && t.s10 > t.s20 && t.s20 > t.s50 && t.s50 > t.s100,
         show: (t) => `SMA5 ${fmt(t.s5)}／SMA100 ${fmt(t.s100)}`, sort: (t) => (t.s5 / t.s100 - 1) * 100 },
-      { id: "ma_bear", label: "空頭排列", note: "SMA5＜SMA10＜SMA20＜SMA60＜SMA100",
-        test: (t) => ok(t.s5, t.s10, t.s20, t.s60, t.s100) && t.s5 < t.s10 && t.s10 < t.s20 && t.s20 < t.s60 && t.s60 < t.s100,
+      { id: "ma_bear", label: "空頭排列", note: "SMA5＜SMA10＜SMA20＜SMA50＜SMA100",
+        test: (t) => ok(t.s5, t.s10, t.s20, t.s50, t.s100) && t.s5 < t.s10 && t.s10 < t.s20 && t.s20 < t.s50 && t.s50 < t.s100,
         show: (t) => `SMA5 ${fmt(t.s5)}／SMA100 ${fmt(t.s100)}`, sort: (t) => (t.s100 / t.s5 - 1) * 100 },
       { id: "ma_tangle", label: "均線糾結", note: "SMA5～SMA60 最高與最低相差 5% 以內",
         test: (t) => tangled(t), show: (t) => `相差 ${fmt(spread(t))}%`, sort: (t) => -spread(t) },

@@ -46,13 +46,28 @@
     return toB64(raw);
   }
 
+  // 資料讀取：每次向伺服器確認是否有新版（未變更時回 304，幾乎不耗時），
+  // 同一版本解密後的結果保留在記憶體，切換頁面時不必重新下載與解密
+  const memo = new Map();
   async function loadData(name) {
-    const blob = await fetch(`data/${name}.enc.json?t=${Date.now()}`, { cache: "no-store" }).then((r) => {
-      if (!r.ok) throw new Error("資料讀取失敗 (" + r.status + ")");
-      return r.json();
-    });
-    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(blob.iv) }, dataKey, b64(blob.ct));
-    return JSON.parse(new TextDecoder().decode(pt));
+    const r = await fetch(`data/${name}.enc.json`, { cache: "no-cache" });
+    if (!r.ok) throw new Error("資料讀取失敗 (" + r.status + ")");
+    const tag = r.headers.get("ETag") || r.headers.get("Last-Modified");
+    const hit = memo.get(name);
+    if (tag && hit && hit.tag === tag && hit.key === dataKey) return hit.data;
+    const blob = await r.json();
+    let pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(blob.iv) }, dataKey, b64(blob.ct));
+    if (blob.z === "gzip") pt = await new Response(new Blob([pt]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+    const data = JSON.parse(new TextDecoder().decode(pt));
+    if (tag) memo.set(name, { tag, key: dataKey, data });
+    return data;
+  }
+
+  // 登入後於背景預先載入其他頁面的資料，切換頁面時即可直接顯示
+  function prefetch() {
+    const names = ["quotes", "watchlist", "screen", "ohlc", "stocks", "instrank"];
+    const run = async () => { for (const n of names) { try { await loadData(n); } catch (e) { /* 略過 */ } } };
+    setTimeout(() => (window.requestIdleCallback ? requestIdleCallback(run, { timeout: 3000 }) : run()), 1500);
   }
 
   // ------------------------------------------------------------ 頁面註冊
@@ -220,6 +235,7 @@
     $("#login").hidden = true;
     $("#app").hidden = false;
     await route();
+    prefetch();
     // 若更新進行中時重新整理了頁面，繼續追蹤
     let pending = null;
     try { pending = sessionStorage.getItem(RUN_STORE); } catch (e) { /* ignore */ }
