@@ -338,14 +338,14 @@
   }
 
   // ------------------------------------------------------------ 投信買最多、外資／投信一直買
-  const TRUST_COLS = ["當日", "2日", "3日", "5日", "10日", "1個月", "3個月", "半年"];
+  const TRUST_COLS = ["當日", "2日", "3日", "5日", "10日", "1<br>個月", "3<br>個月", "半年"];
   const STREAK = [[0, "無"], [2, "連二日"], [3, "連三日"], [5, "連五日"], [10, "連十日"]];
   const stk = (code, name) => `<td class="stk"><a href="#/tech?code=${esc(code)}">${esc(name)}</a></td>`;
 
   function trustRows(list, min) {
     const rows = min ? list.filter((r) => r[10] >= min) : list;
-    if (!rows.length) return `<tr><td colspan="11" class="empty">無符合條件的股票</td></tr>`;
-    return rows.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="muted">${esc(r[0])}</td>${stk(r[0], r[1])}${
+    if (!rows.length) return `<tr><td colspan="9" class="empty">無符合條件的股票</td></tr>`;
+    return rows.map((r) => `<tr>${stk(r[0], r[1])}${
       r.slice(2, 10).map((v) => `<td class="num ${cls(v)}">${fmt(v)}</td>`).join("")}</tr>`).join("");
   }
 
@@ -360,25 +360,25 @@
         </label>
         <span class="muted small" id="trustCount"></span>
       </div>
-      <div class="tbl-wrap ir-wrap ir-scroll"><table class="tbl ir-tbl">
-        <thead><tr><th>排名</th><th>代號</th><th class="stk">股票</th>${TRUST_COLS.map((t) => `<th>${t}</th>`).join("")}</tr></thead>
+      <div class="tbl-wrap ir-wrap ir-scroll"><table class="tbl ir-tbl ir-trust">
+        <thead><tr><th class="stk">股票</th>${TRUST_COLS.map((t) => `<th>${t}</th>`).join("")}</tr></thead>
         <tbody id="trustBody">${trustRows(d.trust, min)}</tbody>
       </table></div>
     </article>`;
   }
 
   function syncCard(d) {
-    const grp = (a) => `<td class="sep">${a[0]}</td><td class="num up">${fmt(a[1], 0)}</td><td class="num">${fmt(a[2])}</td><td class="num">${fmt(a[3])}</td>`;
+    const grp = (a) => `<td class="sep">${a[0]}</td><td class="num up">${fmt(a[1], 0)}</td>`;
     const body = d.sync.length
-      ? d.sync.map((r) => `<tr><td class="muted">${esc(r[0])}</td>${stk(r[0], r[1])}${grp(r.slice(2, 6))}${grp(r.slice(6, 10))}</tr>`).join("")
-      : `<tr><td colspan="10" class="empty">今日無外資、投信同步連續買超的股票</td></tr>`;
-    const sub = (s) => `<th class="sep">${s}日數</th><th>張數</th><th>佔成交<br>(%)</th><th>佔發行量<br>(%)</th>`;
+      ? d.sync.map((r) => `<tr><td class="muted">${esc(r[0])}</td>${stk(r[0], r[1])}${grp(r.slice(2, 4))}${grp(r.slice(6, 8))}</tr>`).join("")
+      : `<tr><td colspan="6" class="empty">今日無外資、投信同步連續買超的股票</td></tr>`;
+    const sub = () => `<th class="sep">日數</th><th>張數</th>`;
     return `
     <article class="card">
       <div class="tbl-wrap ir-wrap"><table class="tbl ir-tbl">
         <thead>
-          <tr><th rowspan="2">代號</th><th rowspan="2" class="stk">名稱</th><th colspan="4" class="sep buy">外資連續買超</th><th colspan="4" class="sep buy">投信連續買超</th></tr>
-          <tr>${sub("")}${sub("")}</tr>
+          <tr><th rowspan="2">代號</th><th rowspan="2" class="stk">名稱</th><th colspan="2" class="sep buy">外資連續買超</th><th colspan="2" class="sep buy">投信連續買超</th></tr>
+          <tr>${sub()}${sub()}</tr>
         </thead>
         <tbody>${body}</tbody>
       </table></div>

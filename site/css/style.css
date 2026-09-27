@@ -588,3 +588,11 @@ a.action-btn { text-decoration: none; }
 .ir-tbl th.buy { background: color-mix(in srgb, var(--up) 14%, var(--surface)); }
 .ir-tbl .sep { border-left: 2px solid var(--border); }
 .ir-tbl td.empty { padding: 18px; }
+@media (max-width: 600px) {
+  .ir-tbl { font-size: 12.5px; }
+  .ir-tbl th, .ir-tbl td { padding: 7px 3px; }
+  .ir-trust { font-size: 11.5px; letter-spacing: -0.2px; }
+  .ir-trust th, .ir-trust td { padding: 7px 1.5px; }
+  .ir-trust .stk { min-width: 0; max-width: 64px; white-space: normal; word-break: break-all; line-height: 1.2; }
+  .ir-trust thead th { line-height: 1.15; }
+}
