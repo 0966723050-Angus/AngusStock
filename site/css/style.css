@@ -603,3 +603,6 @@ a.action-btn { text-decoration: none; }
 /* 自選股：表格區可上下捲動，標題列固定 */
 .watch-scroll { max-height: calc(100dvh - 52px - env(safe-area-inset-top) - 150px); overflow: auto; overscroll-behavior: contain; }
 .watch-scroll thead th { position: sticky; top: 0; z-index: 2; }
+/* 法人排行：長按股票開啟技術分析 */
+.lp { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; cursor: pointer; }
+.lp.pressing, .lp.pressing td { background: var(--head) !important; transition: background .5s; }

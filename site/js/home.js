@@ -302,7 +302,7 @@
   function rankList(list) {
     if (!list || !list.length) return '<div class="empty">無資料</div>';
     return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>股票</th><th>代號</th><th>張數</th></tr></thead><tbody>${
-      list.map((r, i) => `<tr><td class="rk">${i + 1}</td><td>${esc(r[0])}</td><td class="muted">${r[1]}</td><td class="num ${cls(r[2])}">${fmt(r[2], 0)}</td></tr>`).join("")
+      list.map((r, i) => `<tr class="lp" data-code="${esc(r[1])}"><td class="rk">${i + 1}</td><td>${esc(r[0])}</td><td class="muted">${r[1]}</td><td class="num ${cls(r[2])}">${fmt(r[2], 0)}</td></tr>`).join("")
     }</tbody></table></div>`;
   }
 
@@ -313,7 +313,7 @@
       body += `<tr><td class="rk">${i + 1}</td>` + RANK.map(([k], j) => {
         const r = (lists[k] || [])[i];
         const sep = j === 3 ? " sep" : "";
-        return r ? `<td class="${sep.trim()}" title="${r[1]}">${esc(r[0])}</td><td class="num ${cls(r[2])}">${fmt(r[2], 0)}</td>` : `<td class="${sep.trim()}"></td><td></td>`;
+        return r ? `<td class="lp ${sep.trim()}" data-code="${esc(r[1])}" title="${r[1]}（長按開啟技術分析）">${esc(r[0])}</td><td class="num ${cls(r[2])}">${fmt(r[2], 0)}</td>` : `<td class="${sep.trim()}"></td><td></td>`;
       }).join("") + "</tr>";
     }
     return `<div class="tbl-wrap"><table class="tbl">
@@ -410,6 +410,29 @@
     count();
   }
 
+  // 長按排行中的股票 → 技術分析
+  function longPress(root) {
+    let timer = null, x0 = 0, y0 = 0, el = null;
+    const cancel = () => { clearTimeout(timer); timer = null; if (el) el.classList.remove("pressing"); el = null; };
+    root.addEventListener("pointerdown", (e) => {
+      const t = e.target.closest(".lp[data-code]");
+      if (!t || (e.pointerType === "mouse" && e.button !== 0)) return;
+      cancel();
+      el = t; x0 = e.clientX; y0 = e.clientY;
+      el.classList.add("pressing");
+      timer = setTimeout(() => {
+        const code = el.dataset.code;
+        cancel();
+        if (navigator.vibrate) navigator.vibrate(15);
+        location.hash = "#/tech?code=" + encodeURIComponent(code);
+      }, 500);
+    });
+    root.addEventListener("pointermove", (e) => { if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) cancel(); });
+    ["pointerup", "pointercancel", "pointerleave"].forEach((ev) => root.addEventListener(ev, cancel));
+    root.addEventListener("scroll", cancel, true);
+    root.addEventListener("contextmenu", (e) => { if (e.target.closest(".lp[data-code]")) e.preventDefault(); });
+  }
+
   // ------------------------------------------------------------ 頁面
   async function render(view) {
     disposeCharts();
@@ -428,7 +451,7 @@
         ${instCard("上櫃三大法人", "otc", d.inst_otc)}
       </div>
 
-      <div class="section-title"><h2>法人買賣超排行</h2><span class="muted small">${d.top ? "資料日 " + d.top.date + "｜上市＋上櫃普通股｜單位：張" : ""}</span></div>
+      <div class="section-title"><h2>法人買賣超排行</h2><span class="muted small">${d.top ? "資料日 " + d.top.date + "｜上市＋上櫃普通股｜單位：張｜長按股票開啟技術分析" : ""}</span></div>
       <div class="stack">${rankCard(d.top)}</div>
 
       <div class="section-title"><h2>融資融券統計</h2><span class="muted small">融資：億元｜融券：張｜券資比 = 融券 ÷ 融資（張）</span></div>
@@ -451,6 +474,8 @@
     drawInstChart(view.querySelector('[data-inst="tse"]'), d.inst_tse);
     drawInstChart(view.querySelector('[data-inst="otc"]'), d.inst_otc);
 
+    const rcard = view.querySelector("#rankCard");
+    if (rcard) longPress(rcard);
     const rc = view.querySelector("#rankCard .seg");
     if (rc) rc.addEventListener("click", (e) => {
       const b = e.target.closest("button");
