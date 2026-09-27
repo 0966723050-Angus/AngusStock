@@ -363,8 +363,30 @@
     const tech = document.createElement("a");
     tech.className = "action-btn";
     tech.href = `#/stock?code=${encodeURIComponent(code)}`;
-    tech.innerHTML = "<span>個股資訊</span>";
-    if (meta.market === "tse" || meta.market === "otc") App.setAction(tech);
+    tech.innerHTML = "<span>個股<span class=\"lg\">資訊</span></span>";
+    const acts = document.createElement("span");
+    acts.className = "action-group";
+    if (meta.market === "tse" || meta.market === "otc") acts.appendChild(tech);
+    const star = document.createElement("button");
+    star.type = "button";
+    star.className = "action-btn";
+    const setStar = (inList) => {
+      star.disabled = inList;
+      star.innerHTML = inList ? "<span>★ 已自選</span>" : "<span>＋ 自選</span>";
+      star.title = inList ? "已在自選股中" : "加入自選股";
+    };
+    Watch.list().then((w) => setStar(w.items.includes(code))).catch(() => setStar(list.includes(code) && !!wl));
+    star.addEventListener("click", async () => {
+      if (App.isUpdating()) { App.toast("資料更新中，請稍候再加入"); return; }
+      star.disabled = true;
+      try {
+        const added = await Watch.add(code);
+        setStar(true);
+        App.toast(added ? `已將 ${meta.name} 加入自選股` : `${meta.name} 已在自選股中`);
+      } catch (e) { star.disabled = false; App.toast("加入失敗：" + (e.message || e)); }
+    });
+    acts.appendChild(star);
+    App.setAction(acts);
     App.setUpdated(data.updated);
     document.title = `${meta.name} 技術分析｜Angus 股市`;
 

@@ -99,6 +99,8 @@
     $("#pageTitle").textContent = page.title;
     document.title = page.title + "｜Angus 股市";
     document.querySelectorAll("#menuList a").forEach((a) => a.classList.toggle("active", a.dataset.id === (page.menu || page.id)));
+    document.querySelectorAll(".sheet").forEach((s) => s.remove());
+    document.body.classList.remove("no-scroll");
     const view = $("#view");
     view.innerHTML = '<div class="skeleton"></div>';
     try {

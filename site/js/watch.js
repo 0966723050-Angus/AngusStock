@@ -59,7 +59,7 @@
         <span class="watch-meta"><span class="muted small">報價時間 ${esc(quotes.updated || "--")}${syncing ? "｜<b>清單同步中</b>" : ""}</span>
         <button type="button" class="btn-ghost watch-update">立即更新報價</button></span></div>
       <article class="card">
-        <div class="tbl-wrap">
+        <div class="tbl-wrap watch-scroll">
           <table class="tbl watch-tbl">
             <colgroup><col class="c-stk"><col class="c-px"><col class="c-chg"><col class="c-pct"><col class="c-vol"><col class="c-amp"></colgroup>
             <thead><tr><th>股票</th><th>成交價</th><th>漲跌</th><th>漲幅%</th><th>成交量</th><th>振幅%</th></tr></thead>
@@ -228,6 +228,20 @@
     view.addEventListener("click", (e) => go(e.target.closest("tr.link")));
     view.addEventListener("keydown", (e) => { if (e.key === "Enter") go(e.target.closest("tr.link")); });
   }
+
+  // 由其他頁面加入自選股（技術分析「加入自選」）：暫存於此裝置並觸發同步
+  async function add(code) {
+    const wl = await loadList();
+    if (wl.items.includes(code)) return false;
+    const list = [...wl.items, code];
+    const ts = Date.now();
+    writePending({ items: list, ts });
+    const blob = await App.encryptJSON({ v: 1, items: list, ts });
+    const ok = await App.runUpdate({ inputs: { watchlist: JSON.stringify(blob) } });
+    if (!ok) App.toast("已暫存於此裝置，稍後到自選股「編輯 → 完成」同步");
+    return true;
+  }
+  window.Watch = { list: loadList, add };
 
   App.register({ id: "watch", title: "自選股行情", icon: "⭐", render });
 })();

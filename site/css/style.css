@@ -132,7 +132,7 @@ button { font: inherit; color: inherit; }
 }
 :root[data-theme="dark"] .topbar { background: #16335c; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .topbar { background: #16335c; } }
-.topbar h1 { flex: 1; margin: 0; font-size: 18px; font-weight: 600; }
+.topbar h1 { flex: 1; min-width: 0; margin: 0; font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .icon-btn {
   width: 44px; height: 44px; display: grid; place-items: center;
   border: 0; background: transparent; color: #fff; border-radius: 10px; cursor: pointer;
@@ -288,6 +288,9 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
   font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .action-btn:hover { background: rgba(255,255,255,.28); }
+.action-btn:disabled { opacity: .75; cursor: default; }
+.action-group { display: inline-flex; gap: 6px; }
+@media (max-width: 420px) { .action-group { gap: 4px; } .action-group .action-btn { padding: 0 8px; font-size: 13px; } .action-group .lg { display: none; } }
 @media (max-width: 420px) { .update-btn span { display: none; } .update-btn { padding: 0 9px; } }
 
 /* ---------- 自選股 ---------- */
@@ -596,3 +599,7 @@ a.action-btn { text-decoration: none; }
   .ir-trust .stk { min-width: 0; max-width: 64px; white-space: normal; word-break: break-all; line-height: 1.2; }
   .ir-trust thead th { line-height: 1.15; }
 }
+
+/* 自選股：表格區可上下捲動，標題列固定 */
+.watch-scroll { max-height: calc(100dvh - 52px - env(safe-area-inset-top) - 150px); overflow: auto; overscroll-behavior: contain; }
+.watch-scroll thead th { position: sticky; top: 0; z-index: 2; }
