@@ -359,6 +359,11 @@ def build_stocks(key, items, quote_rows, trading_days, refresh_fund):
         }
     u.save_json(STOCKS_FILE, u.encrypt_json({"updated": dt.datetime.now(u.TZ).strftime("%Y-%m-%d %H:%M"), "stocks": out}, key))
     print(f"  個股資訊已更新：{len(out)} 檔，圖表 {len(dates)} 個交易日")
+    try:  # 首頁：投信買最多、外資／投信一直買
+        import inst_rank
+        inst_rank.build(key, daily, fund, quote_rows)
+    except Exception as e:  # noqa: BLE001
+        print("  ! 投信買最多／一直買失敗：", e)
 
 
 # ---------------------------------------------------------------- 技術分析：個股日 K 歷史

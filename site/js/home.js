@@ -337,6 +337,79 @@
     </article>`;
   }
 
+  // ------------------------------------------------------------ 投信買最多、外資／投信一直買
+  const TRUST_COLS = ["當日", "2日", "3日", "5日", "10日", "1個月", "3個月", "半年"];
+  const STREAK = [[0, "無"], [2, "連二日"], [3, "連三日"], [5, "連五日"], [10, "連十日"]];
+  const stk = (code, name) => `<td class="stk"><a href="#/tech?code=${esc(code)}">${esc(name)}</a></td>`;
+
+  function trustRows(list, min) {
+    const rows = min ? list.filter((r) => r[10] >= min) : list;
+    if (!rows.length) return `<tr><td colspan="11" class="empty">無符合條件的股票</td></tr>`;
+    return rows.map((r, i) => `<tr><td class="rk">${i + 1}</td><td class="muted">${esc(r[0])}</td>${stk(r[0], r[1])}${
+      r.slice(2, 10).map((v) => `<td class="num ${cls(v)}">${fmt(v)}</td>`).join("")}</tr>`).join("");
+  }
+
+  function trustCard(d) {
+    let min = 0;
+    try { min = +(localStorage.getItem("angus.trustStreak") || 0); } catch (e) { /* ignore */ }
+    return `
+    <article class="card">
+      <div class="card-head ir-head">
+        <label class="ir-filter">投信連買
+          <select id="trustStreak">${STREAK.map(([n, t]) => `<option value="${n}"${n === min ? " selected" : ""}>${t}</option>`).join("")}</select>
+        </label>
+        <span class="muted small" id="trustCount"></span>
+      </div>
+      <div class="tbl-wrap ir-wrap ir-scroll"><table class="tbl ir-tbl">
+        <thead><tr><th>排名</th><th>代號</th><th class="stk">股票</th>${TRUST_COLS.map((t) => `<th>${t}</th>`).join("")}</tr></thead>
+        <tbody id="trustBody">${trustRows(d.trust, min)}</tbody>
+      </table></div>
+    </article>`;
+  }
+
+  function syncCard(d) {
+    const grp = (a) => `<td class="sep">${a[0]}</td><td class="num up">${fmt(a[1], 0)}</td><td class="num">${fmt(a[2])}</td><td class="num">${fmt(a[3])}</td>`;
+    const body = d.sync.length
+      ? d.sync.map((r) => `<tr><td class="muted">${esc(r[0])}</td>${stk(r[0], r[1])}${grp(r.slice(2, 6))}${grp(r.slice(6, 10))}</tr>`).join("")
+      : `<tr><td colspan="10" class="empty">今日無外資、投信同步連續買超的股票</td></tr>`;
+    const sub = (s) => `<th class="sep">${s}日數</th><th>張數</th><th>佔成交<br>(%)</th><th>佔發行量<br>(%)</th>`;
+    return `
+    <article class="card">
+      <div class="tbl-wrap ir-wrap"><table class="tbl ir-tbl">
+        <thead>
+          <tr><th rowspan="2">代號</th><th rowspan="2" class="stk">名稱</th><th colspan="4" class="sep buy">外資連續買超</th><th colspan="4" class="sep buy">投信連續買超</th></tr>
+          <tr>${sub("")}${sub("")}</tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table></div>
+    </article>`;
+  }
+
+  async function renderInstRank(box) {
+    let d;
+    try { d = await App.loadData("instrank"); } catch (e) {
+      box.innerHTML = '<article class="card"><div class="empty">尚無資料（每個交易日 22:00 更新）</div></article>';
+      return;
+    }
+    box.innerHTML = `
+      <div class="section-title"><h2>投信買最多</h2><span class="muted small">資料日 ${d.date}｜投信買超佔發行張數比例（%）｜依半年排序</span></div>
+      <div class="stack">${trustCard(d)}</div>
+      <div class="section-title"><h2>外資／投信一直買</h2><span class="muted small">資料日 ${d.date}｜外資與投信同步連續買超（皆 ≥ 2 日）</span></div>
+      <div class="stack">${syncCard(d)}</div>`;
+    const sel = box.querySelector("#trustStreak");
+    const count = () => {
+      const n = +sel.value;
+      box.querySelector("#trustCount").textContent = `共 ${n ? d.trust.filter((r) => r[10] >= n).length : d.trust.length} 檔`;
+    };
+    sel.addEventListener("change", () => {
+      box.querySelector("#trustBody").innerHTML = trustRows(d.trust, +sel.value);
+      box.querySelector(".ir-scroll").scrollTop = 0;
+      count();
+      try { localStorage.setItem("angus.trustStreak", sel.value); } catch (e) { /* ignore */ }
+    });
+    count();
+  }
+
   // ------------------------------------------------------------ 頁面
   async function render(view) {
     disposeCharts();
@@ -363,7 +436,10 @@
         ${marginCard("上市融資融券", "tse", d.margin_tse)}
         ${marginCard("上櫃融資融券", "otc", d.margin_otc)}
       </div>
+
+      <div id="instRank"></div>
     `;
+    renderInstRank(view.querySelector("#instRank"));
     // 點選指數名稱或價格 → 開啟近半年日 K
     const openK = (el) => { if (el) IdxK.open(el.dataset.idx, el.dataset.idx === "加權指數" ? d.tse_daily : d.otc_daily); };
     view.addEventListener("click", (e) => openK(e.target.closest(".idx-open")));

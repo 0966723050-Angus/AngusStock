@@ -574,3 +574,17 @@ a.action-btn { text-decoration: none; }
 .lg-dot.round { width: 9px; height: 9px; border-radius: 50%; }
 .ta-info small { color: var(--muted); font-size: 11px; }
 .week-info .ti { white-space: normal; }
+
+/* 首頁：投信買最多、外資／投信一直買 */
+.ir-head { gap: 10px; }
+.ir-filter { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
+.ir-filter select { font: inherit; font-weight: 400; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.ir-scroll { max-height: 62vh; overflow-y: auto; }
+.ir-scroll thead th { position: sticky; top: 0; z-index: 2; }
+.ir-tbl .stk { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 72px; }
+.ir-tbl thead th.stk { z-index: 3; background: var(--head); }
+.ir-tbl tbody tr:nth-child(even) td.stk { background: var(--surface-2); }
+.ir-tbl .stk a { color: var(--text); text-decoration: none; font-weight: 600; }
+.ir-tbl th.buy { background: color-mix(in srgb, var(--up) 14%, var(--surface)); }
+.ir-tbl .sep { border-left: 2px solid var(--border); }
+.ir-tbl td.empty { padding: 18px; }
