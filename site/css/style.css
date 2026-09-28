@@ -606,3 +606,5 @@ a.action-btn { text-decoration: none; }
 /* 法人排行：長按股票開啟技術分析 */
 .lp { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; cursor: pointer; }
 .lp.pressing, .lp.pressing td { background: var(--head) !important; transition: background .5s; }
+/* 國際股市：報價時間兩行顯示 */
+.watch-tbl td.intl-time { font-size: 11.5px; line-height: 1.25; color: var(--muted); white-space: normal; }

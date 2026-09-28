@@ -65,7 +65,7 @@
 
   // 登入後於背景預先載入其他頁面的資料，切換頁面時即可直接顯示
   function prefetch() {
-    const names = ["quotes", "watchlist", "screen", "ohlc", "stocks", "instrank"];
+    const names = ["quotes", "watchlist", "intl", "screen", "ohlc", "stocks", "instrank"];
     const run = async () => { for (const n of names) { try { await loadData(n); } catch (e) { /* 略過 */ } } };
     setTimeout(() => (window.requestIdleCallback ? requestIdleCallback(run, { timeout: 3000 }) : run()), 1500);
   }

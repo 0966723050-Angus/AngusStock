@@ -14,9 +14,14 @@ on:
     - cron: "35 14 * * 1-5"
     - cron: "15 15 * * 1-5"
     - cron: "50 15 * * 1-5"
+    # 國際股市：台北 21:00～05:00、08:00～14:00 每半小時（分鐘取 05／35，與上方時段區隔；只更新國際行情）
+    - cron: "5,35 13-20 * * *"
+    - cron: "5 21 * * *"
+    - cron: "5,35 0-5 * * *"
+    - cron: "5 6 * * *"
   push:
     branches: [main]
-    paths-ignore: ["state/**", "site/data/home.enc.json", "site/data/quotes.enc.json", "site/data/watchlist.enc.json", "site/data/stocks.enc.json", "site/data/ohlc.enc.json"]
+    paths-ignore: ["state/**", "site/data/intl.enc.json", "site/data/intl_list.enc.json", "site/data/instrank.enc.json", "site/data/home.enc.json", "site/data/quotes.enc.json", "site/data/watchlist.enc.json", "site/data/stocks.enc.json", "site/data/ohlc.enc.json"]
   workflow_dispatch:
     inputs:
       force:
@@ -25,6 +30,10 @@ on:
         default: false
       watchlist:
         description: "自選股清單（網頁加密後傳入，勿手動填寫）"
+        type: string
+        default: ""
+      intl:
+        description: "國際股市：refresh＝只更新行情，或網頁加密後的清單（勿手動填寫）"
         type: string
         default: ""
 
@@ -41,19 +50,32 @@ jobs:
   update:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    env:
+      # 國際股市模式：網頁送出 intl 參數，或由國際股市排程（分鐘 05／35）觸發
+      INTL_MODE: ${{ (inputs.intl || '') != '' || startsWith(github.event.schedule, '5,35 ') || startsWith(github.event.schedule, '5 ') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -r scripts/requirements.txt
+      - name: 國際股市行情
+        if: env.INTL_MODE == 'true'
+        env:
+          DATA_KEY: ${{ secrets.DATA_KEY }}
+          INTL_BLOB: ${{ inputs.intl }}
+        run: python scripts/intl.py
       - name: 還原個股資料快取
+        if: env.INTL_MODE != 'true'
         uses: actions/cache/restore@v4
         with:
           path: cache
           key: stock-cache-${{ github.run_id }}
           restore-keys: stock-cache-
       - name: 抓取資料
+        if: env.INTL_MODE != 'true'
         env:
           DATA_KEY: ${{ secrets.DATA_KEY }}
           WATCHLIST_BLOB: ${{ inputs.watchlist }}
@@ -65,26 +87,31 @@ jobs:
             python scripts/update_data.py ${{ inputs.force && '--force' || '' }}
           fi
       - name: 儲存個股資料快取
-        if: always()
+        if: always() && env.INTL_MODE != 'true'
         uses: actions/cache/save@v4
         with:
           path: cache
           key: stock-cache-${{ github.run_id }}
       - name: 提交資料
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state site/data
           if git diff --cached --quiet; then
             echo "資料無變動"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "資料更新 $(TZ=Asia/Taipei date '+%Y-%m-%d %H:%M')"
+            git pull --rebase -q origin main
             git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
   deploy:
     needs: update
-    if: always() && (needs.update.result == 'success' || needs.update.result == 'skipped')
+    # 資料無變動（例如國際股市休市時段）就不重新部署
+    if: always() && (needs.update.result == 'skipped' || (needs.update.result == 'success' && needs.update.outputs.changed == 'true'))
     runs-on: ubuntu-latest
     environment:
       name: github-pages
