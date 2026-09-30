@@ -288,10 +288,13 @@ def fetch_fund():
 
 
 def load_fund(refresh: bool):
+    """基本面資料（抓取約需 5 分鐘）：平常使用快取，由每日 21:30 的排程（--fund-only）更新；
+    快取不存在或超過 3 天未更新時才在一般更新中補抓"""
     today = dt.date.today().isoformat()
     if FUND_FILE.exists():
         data = json.loads(FUND_FILE.read_text("utf-8"))
-        if not refresh or data.get("date") == today:
+        stale = data.get("date", "") < (dt.date.today() - dt.timedelta(days=3)).isoformat()
+        if (not refresh and not stale) or data.get("date") == today:
             return data["rows"]
     print("  抓取個股基本面資料…")
     rows = fetch_fund()

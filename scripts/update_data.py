@@ -685,9 +685,15 @@ def main():
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--date", help="指定日期 YYYY-MM-DD（測試用）")
     ap.add_argument("--watch-only", action="store_true", help="只更新自選股清單與報價")
+    ap.add_argument("--fund-only", action="store_true", help="只更新個股基本面快取（每日排程）")
     args = ap.parse_args()
 
     key = data_key()
+    if args.fund_only:
+        import stock_info
+        stock_info.load_fund(True)
+        print("基本面快取已更新")
+        return
     now = dt.datetime.now(TZ)
     day = dt.date.fromisoformat(args.date) if args.date else now.date()
     print(f"執行時間 {now:%Y-%m-%d %H:%M}，資料日 {day}")
@@ -785,7 +791,7 @@ def main():
     save_json(OUT_FILE, encrypt_json(home, key))
     print("完成：", OUT_FILE)
     if not watch_blob:
-        update_watch(key, full=True)
+        update_watch(key)
 
 
 if __name__ == "__main__":

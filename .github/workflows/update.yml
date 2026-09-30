@@ -14,6 +14,8 @@ on:
     - cron: "35 14 * * 1-5"
     - cron: "15 15 * * 1-5"
     - cron: "50 15 * * 1-5"
+    # 個股基本面快取：台北 21:30（抓取約 5 分鐘，與一般更新分開，手動更新時不必等待）
+    - cron: "30 13 * * 1-5"
     # 國際股市：台北 21:00～05:00、08:00～14:00 每半小時（分鐘取 05／35，與上方時段區隔；只更新國際行情）
     - cron: "5,35 13-20 * * *"
     - cron: "5 21 * * *"
@@ -91,7 +93,9 @@ jobs:
           WATCHLIST_BLOB: ${{ inputs.watchlist }}
           SCHEDULED: ${{ github.event_name == 'schedule' }}
         run: |
-          if [ -n "$WATCHLIST_BLOB" ]; then
+          if [ "${{ github.event.schedule }}" = "30 13 * * 1-5" ]; then
+            python scripts/update_data.py --fund-only
+          elif [ -n "$WATCHLIST_BLOB" ]; then
             python scripts/update_data.py --watch-only
           else
             python scripts/update_data.py ${{ inputs.force && '--force' || '' }}
