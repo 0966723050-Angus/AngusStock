@@ -405,21 +405,43 @@ def months_back(day: dt.date, n):
     return sorted(out)
 
 
-def update_hist(code, market, latest_day: str):
-    """維護 cache/hist/<code>.json；新股票回補 HIST_MONTHS 個月，其後只抓當月"""
+def recent_market(days=10):
+    """全市場日資料快取（cache/market）最近幾個交易日：{日期: {code: [名稱, 市場, 開, 高, 低, 收, 張數, 成交額, 漲跌]}}；
+    同日有官方資料時優先使用，否則用盤後暫定（MIS）資料"""
+    d = CACHE / "market"
+    out = {}
+    for f in sorted(d.glob("????-??-??.json.gz"))[-days:] + sorted(d.glob("????-??-??.mis.json.gz"))[-2:]:
+        iso = f.name[:10]
+        if f.name.endswith(".mis.json.gz") and iso in out:
+            continue
+        try:
+            out[iso] = json.loads(gzip.decompress(f.read_bytes()))
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def update_hist(code, market, latest_day: str, recent=None):
+    """維護 cache/hist/<code>.json；新股票回補 HIST_MONTHS 個月。
+    之後的新交易日優先由全市場日資料快取補上（不需逐檔連線），快取沒有的日期才向交易所抓當月資料"""
     HIST.mkdir(parents=True, exist_ok=True)
     f = HIST / f"{code}.json"
     rows = json.loads(f.read_text("utf-8")) if f.exists() else []
     today = dt.date.today()
+    data = {r[0]: r for r in rows}
+    if rows:
+        for iso, rec in (recent or {}).items():  # 最近幾日一律以快取覆寫（暫定資料會被官方資料取代）
+            r = rec.get(code)
+            if iso >= rows[0][0] and r and r[5] is not None:
+                data[iso] = [iso, r[2], r[3], r[4], r[5], r[6], r[8]]
     if not rows:
         print(f"  日K回補 {code}（{HIST_MONTHS} 個月）")
         months = months_back(today, HIST_MONTHS)
-    elif rows[-1][0] >= latest_day:
-        return rows
+    elif max(data) >= latest_day:
+        months = []
     else:
-        last = dt.date.fromisoformat(rows[-1][0])
+        last = dt.date.fromisoformat(max(data))
         months = [m for m in months_back(today, 3) if m >= last.replace(day=1)]
-    data = {r[0]: r for r in rows}
     for m in months:
         for r in fetch_month(code, market, m):
             data[r[0]] = r
@@ -443,6 +465,7 @@ def index_hist(state, mkt):
 def build_ohlc(key, items, quote_rows, state):
     fund = json.loads(FUND_FILE.read_text("utf-8"))["rows"] if FUND_FILE.exists() else {}
     latest = max(state.get("tse_idx", {}) or [""])
+    recent = recent_market()
     out = {}
     for code in items:
         if code in u.INDEX_ITEMS:
@@ -456,7 +479,7 @@ def build_ohlc(key, items, quote_rows, state):
             import futures
             out[code] = {"name": q[0], "market": "fut", "vol_unit": "口", "rows": futures.series(code)}
             continue
-        rows = update_hist(code, q[1], latest)
+        rows = update_hist(code, q[1], latest, recent)
         out[code] = {"name": q[0], "market": q[1], "vol_unit": "張", "shares": fund.get(code, {}).get("shares"), "rows": rows}
     u.save_json(OHLC_FILE, u.encrypt_json({"updated": dt.datetime.now(u.TZ).strftime("%Y-%m-%d %H:%M"), "stocks": out}, key))
     print(f"  技術分析日K已更新：{len(out)} 檔")

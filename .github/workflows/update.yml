@@ -41,25 +41,34 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  actions: write
 
-concurrency:
-  group: update-and-deploy
-  cancel-in-progress: false
+# 排隊規則改在各 job 設定：國際股市與台股資料分開排隊，部署另外排隊，彼此不會互相卡住
 
 jobs:
   update:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
+    concurrency:
+      group: update-${{ ((inputs.intl || '') != '' || startsWith(github.event.schedule, '5,35 ') || startsWith(github.event.schedule, '5 ')) && 'intl' || 'main' }}
+      cancel-in-progress: false
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
     env:
       # 國際股市模式：網頁送出 intl 參數，或由國際股市排程（分鐘 05／35）觸發
       INTL_MODE: ${{ (inputs.intl || '') != '' || startsWith(github.event.schedule, '5,35 ') || startsWith(github.event.schedule, '5 ') }}
     steps:
+      - name: 取消卡住超過 10 分鐘的執行（GitHub Pages 部署偶爾會卡在 waiting）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run list -R "${{ github.repository }}" --status waiting --json databaseId,createdAt             -q '.[] | select((now - (.createdAt | fromdateiso8601)) > 600) | .databaseId'             | xargs -r -I{} gh api -X POST "repos/${{ github.repository }}/actions/runs/{}/force-cancel" || true
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
       - run: pip install -r scripts/requirements.txt
       - name: 國際股市行情
         if: env.INTL_MODE == 'true'
@@ -77,6 +86,7 @@ jobs:
       - name: 抓取資料
         if: env.INTL_MODE != 'true'
         env:
+          PYTHONUNBUFFERED: "1"
           DATA_KEY: ${{ secrets.DATA_KEY }}
           WATCHLIST_BLOB: ${{ inputs.watchlist }}
           SCHEDULED: ${{ github.event_name == 'schedule' }}
@@ -113,6 +123,10 @@ jobs:
     # 資料無變動（例如國際股市休市時段）就不重新部署
     if: always() && (needs.update.result == 'skipped' || (needs.update.result == 'success' && needs.update.outputs.changed == 'true'))
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -123,6 +137,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
       - run: pip install -r scripts/requirements.txt
       - name: 還原個股資料快取
         uses: actions/cache/restore@v4

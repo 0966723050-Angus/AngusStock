@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import time
+from urllib.parse import urlsplit
 from pathlib import Path
 
 
@@ -33,7 +34,31 @@ DEFAULT_WATCH = ["t00", "2330", "3105", "8150", "6182", "2409", "3481", "2313",
                  "6239", "2408", "2344", "2421", "2481"]
 HISTORY_DAYS = 130  # 法人買賣超圖表保留的交易日數
 
-S = requests.Session()
+# 依網站限速：同一網站兩次請求之間至少間隔 N 秒（不同網站不需互相等待）
+HOST_GAP = {"www.twse.com.tw": 2.5, "www.tpex.org.tw": 2.0, "www.taifex.com.tw": 1.5,
+            "openapi.twse.com.tw": 0.5, "mopsov.twse.com.tw": 2.0, "mis.twse.com.tw": 1.0}
+
+
+class PoliteSession(requests.Session):
+    def __init__(self):
+        super().__init__()
+        self._last = {}
+
+    def request(self, method, url, *args, **kwargs):
+        host = urlsplit(url).hostname or ""
+        gap = HOST_GAP.get(host, 0)
+        if gap:
+            wait = self._last.get(host, 0) + gap - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+        try:
+            return super().request(method, url, *args, **kwargs)
+        finally:
+            if gap:
+                self._last[host] = time.monotonic()
+
+
+S = PoliteSession()
 S.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AngusStock/1.0"})
 
 
@@ -110,7 +135,7 @@ def get_json(url, params=None, retries=3):
 
 
 def polite():
-    time.sleep(2.5)  # TWSE/TPEx 有流量限制
+    """保留相容：限速改由 PoliteSession 依網站處理"""
 
 
 # ---------------------------------------------------------------- 指數日資料

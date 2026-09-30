@@ -179,6 +179,12 @@
       if (Date.now() - t0 > 15 * 60000) throw new Error("更新逾時，請稍後再重新整理");
       await new Promise((r) => setTimeout(r, 8000));
     }
+    if (run.conclusion === "cancelled") {
+      // 部署排隊時可能被較新的部署取代：資料已抓取完成即視為成功（由較新的部署上線）
+      const jobs = await gh(cfg, `/actions/runs/${run.id}/jobs`);
+      const upd = (jobs.jobs || []).find((j) => j.name === "update");
+      if (upd && upd.conclusion === "success") { await new Promise((r) => setTimeout(r, 30000)); return; }
+    }
     if (run.conclusion !== "success") throw new Error("更新失敗（" + run.conclusion + "）");
   }
 

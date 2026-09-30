@@ -84,8 +84,7 @@ def fetch_mis_snapshot(day: dt.date, ref: dict):
     for i in range(0, len(codes), 50):
         chunk = codes[i:i + 50]
         j = u.get_json("https://mis.twse.com.tw/stock/api/getStockInfo.jsp",
-                       {"ex_ch": "|".join(f"{m}_{c}.tw" for c, m in chunk), "json": 1, "delay": 0})
-        u.time.sleep(1.2)
+                       {"ex_ch": "|".join(f"{m}_{c}.tw" for c, m in chunk), "json": 1, "delay": 0})  # 限速見 HOST_GAP
         for m in (j or {}).get("msgArray", []):
             if m.get("d") != day.strftime("%Y%m%d"):
                 continue
