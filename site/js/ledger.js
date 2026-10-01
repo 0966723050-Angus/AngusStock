@@ -29,6 +29,8 @@
   let db = null, sha = null, quotes = { rows: {} };
   let tab = "account", pnlKind = "unreal", period = "all", custom = { from: "", to: "" };
   let tfKind = "all", tfPeriod = "all", tfCustom = { from: "", to: "" };
+  const openFolds = new Set();
+  const fold = (id) => `data-fold="${id}"${openFolds.has(id) ? " open" : ""}`;
 
   // ------------------------------------------------------------ 計算
   const S = () => ({ ...DEF_SETTINGS, ...(db.settings || {}), rates: { ...DEF_SETTINGS.rates, ...((db.settings || {}).rates || {}) } });
@@ -336,7 +338,7 @@
         <p class="muted small">帳戶餘額＝本金＋轉帳淨額＋已實現損益＋手續費回沖＋持股除息－持股投入成本；帳戶總額＝帳戶餘額＋股票市值；交易盈虧以（本金＋轉帳淨額）為基準。</p>
       </article>
       ${transferSection()}
-      <details class="card lg-fold">
+      <details class="card lg-fold" ${fold("rates")}>
         <summary>費率設定</summary>
         <div class="tbl-wrap"><table class="tbl lg-rates">
           <thead><tr><th>交易型態</th><th>買進手續費</th><th>賣出手續費</th><th>證交稅</th></tr></thead>
@@ -359,13 +361,18 @@
       .sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
     const sIn = list.filter((x) => x.kind === "in").reduce((s, x) => s + x.amount, 0);
     const sOut = list.filter((x) => x.kind === "out").reduce((s, x) => s + x.amount, 0);
+    const allIn = db.transfers.filter((x) => x.kind === "in").reduce((s, x) => s + x.amount, 0);
+    const allOut = db.transfers.filter((x) => x.kind === "out").reduce((s, x) => s + x.amount, 0);
     return `
-      <div class="section-title"><h2>轉帳紀錄</h2><button type="button" class="btn-ghost lg-tf-add" data-act="addTransfer">＋ 轉帳</button></div>
+      <details class="card lg-fold" ${fold("transfers")}>
+      <summary>轉帳紀錄<span class="lg-fold-meta">${db.transfers.length} 筆・淨額 <b class="${cls(allIn - allOut)}">${sgn(allIn - allOut)}</b></span></summary>
+      <div class="lg-fold-body">
+      <div class="lg-tf-bar"><button type="button" class="btn-primary lg-tf-add" data-act="addTransfer">＋ 新增轉帳</button></div>
       <div class="seg lg-tf-kind" role="group" aria-label="轉帳類型">${[["all", "全部"], ["in", "匯入"], ["out", "匯出"]]
         .map(([k, t]) => `<button type="button" data-tfkind="${k}" aria-pressed="${k === tfKind}">${t}</button>`).join("")}</div>
       <div class="seg lg-tf-period" role="group" aria-label="查詢區間">${PER.map(([k, t]) => `<button type="button" data-tfperiod="${k}" aria-pressed="${k === tfPeriod}">${t}</button>`).join("")}</div>
       ${tfPeriod === "custom" ? `<div class="lg-custom"><input type="date" id="tfFrom" value="${esc(tfCustom.from)}"> ～ <input type="date" id="tfTo" value="${esc(tfCustom.to)}"></div>` : ""}
-      <article class="card"><div class="tbl-wrap"><table class="tbl lg-tbl lg-tf">
+      <div class="tbl-wrap"><table class="tbl lg-tbl lg-tf">
         <thead><tr><th>日期</th><th>類型</th><th>金額</th><th>備註</th></tr></thead>
         <tbody>${list.map((x) => `<tr class="link" data-tf="${esc(x.id)}" tabindex="0">
           <td>${esc(x.date)}</td><td><span class="lg-tf-k ${x.kind}">${x.kind === "in" ? "匯入" : "匯出"}</span></td>
@@ -373,7 +380,8 @@
           '<tr><td colspan="4" class="empty">此區間沒有轉帳紀錄</td></tr>'}</tbody>
       </table></div>
       <div class="lg-sum"><span>匯入：<b class="up">${fmt(sIn)}</b></span><span>匯出：<b class="down">${fmt(sOut)}</b></span><span>淨額：<b class="${cls(sIn - sOut)}">${sgn(sIn - sOut)}</b></span><span class="muted">共 ${list.length} 筆</span></div>
-      </article>`;
+      </div>
+      </details>`;
   }
 
   function transferForm(view, x) {
@@ -564,6 +572,10 @@
         if (await commit((d) => { d.settings = { rates, rebate, minFee }; }, "帳務：修改費率")) draw(view);
       }
     };
+    view.addEventListener("toggle", (e) => { // toggle 事件不冒泡，以捕獲階段記錄展開狀態
+      const id = e.target.dataset && e.target.dataset.fold;
+      if (id) { if (e.target.open) openFolds.add(id); else openFolds.delete(id); }
+    }, true);
     view.onchange = async (e) => {
       if (e.target.id === "lgPrincipal") {
         const v = Number(e.target.value) || 0;
