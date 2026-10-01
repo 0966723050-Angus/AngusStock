@@ -613,3 +613,74 @@ a.action-btn { text-decoration: none; }
 .watch-tbl td.num b.lim-up, .watch-tbl td.num b.lim-dn { display: inline-block; color: #fff; padding: 1px 5px; border-radius: 4px; line-height: 1.35; }
 .watch-tbl td.num b.lim-up { background: var(--up); }
 .watch-tbl td.num b.lim-dn { background: var(--down); }
+
+/* ---------- 帳務查詢 ---------- */
+.lg-tabs { padding: 0 0 12px; position: sticky; top: calc(52px + env(safe-area-inset-top)); z-index: 5; background: var(--bg); }
+.lg-tabs button { flex: 1; }
+.lg-kind, .lg-period { padding: 0 0 10px; }
+.lg-account { padding: 16px; }
+.lg-account h3 { margin: 0 0 10px; font-size: 18px; }
+.lg-account dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; margin: 0 0 10px; align-items: center; }
+.lg-account dt { color: var(--muted); }
+.lg-account dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.lg-account dd b { font-size: 17px; }
+.lg-account input { width: 140px; text-align: right; font: inherit; font-weight: 700; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.lg-rates input { width: 92px; text-align: center; font: inherit; padding: 3px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+.lg-rate-more { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 12px 14px 0; }
+.lg-rate-more input { width: 70px; text-align: center; font: inherit; padding: 3px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+.lg-rates + * , .lg-account + * { margin-top: 0; }
+.card > .muted.small { padding: 0 14px 12px; margin: 8px 0 0; }
+.lg-tbl .stk { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; min-width: 76px; }
+.lg-tbl tbody tr:nth-child(even) td.stk { background: var(--surface-2); }
+.lg-tbl .stk b { display: block; }
+.lg-tbl .stk small { color: var(--muted); font-size: 11px; }
+.lg-tbl .sep { border-left: 2px solid var(--border); }
+.lg-tbl tr.link { cursor: pointer; }
+.lg-tbl tfoot td { font-weight: 600; border-top: 2px solid var(--border); }
+.lg-st { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.lg-st.hold { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.lg-st.done { background: var(--surface-2); color: var(--muted); }
+.lg-sum { display: flex; flex-wrap: wrap; gap: 6px 20px; padding: 12px 14px; border-top: 1px solid var(--border); font-size: 14px; }
+.lg-custom { display: flex; gap: 8px; align-items: center; padding: 0 0 10px; }
+.lg-custom input { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.lg-sell { padding: 3px 10px; }
+/* 交易明細：手機用卡片、寬螢幕用完整表格 */
+.lg-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lg-cards li { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
+.lg-c-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+.lg-c-head b { font-size: 16px; }
+.lg-c-head small { color: var(--muted); flex: 1; }
+.lg-c-row { display: flex; gap: 6px; font-variant-numeric: tabular-nums; }
+.lg-c-row span:last-child { margin-left: auto; font-weight: 600; }
+.lg-c-sub { display: flex; gap: 8px; margin: 0 0 4px 22px; }
+.lg-c-sub b { margin-left: auto; }
+.lg-wide { display: none; }
+@media (min-width: 900px) { .lg-cards { display: none; } .lg-wide { display: block; } }
+/* 新增／編輯表單 */
+.lg-form { max-width: 640px; margin: 0 auto; padding: 14px; display: grid; gap: 12px; }
+.lg-form fieldset { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0; }
+.lg-form legend { font-weight: 600; padding: 0 4px; }
+.lg-form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
+.lg-form label small { font-size: 11px; }
+.lg-form input, .lg-form select { font: inherit; font-size: 16px; color: var(--text); padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); min-width: 0; }
+.lg-preview { min-height: 1.4em; margin: 0; line-height: 1.6; }
+.btn-danger { font: inherit; padding: 10px; border: 1px solid var(--down); color: var(--down); background: transparent; border-radius: 10px; cursor: pointer; }
+.lg-rate-more .btn-primary, .lg-sell { width: auto; }
+@media (max-width: 600px) {
+  .lg-rates th, .lg-rates td { padding: 6px 3px; font-size: 13px; }
+  .lg-rates input { width: 74px; font-size: 13px; }
+}
+.lg-tabs button { padding-left: 4px; padding-right: 4px; font-size: 14px; white-space: nowrap; }
+.lg-c-row { align-items: baseline; font-size: 14px; }
+.lg-c-row span:nth-child(2) { flex: 1; min-width: 0; }
+.lg-c-row span:last-child { white-space: nowrap; }
+.lg-c-sub { margin-left: 20px; }
+.lg-pnl-cards li { cursor: default; }
+.lg-pnl-v { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
+.lg-pnl-v b { font-size: 16px; }
+.lg-pnl-v small { font-size: 12px; color: inherit; flex: none; }
+.lg-kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.lg-kv span { display: flex; flex-direction: column; }
+.lg-kv b { font-size: 14px; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.lg-cards li.empty { cursor: default; text-align: center; color: var(--muted); }
+.lg-sum { border-top: 0; }

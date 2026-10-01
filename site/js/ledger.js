@@ -1,0 +1,470 @@
+/* 帳務查詢：股票帳戶、交易明細、股票庫存、交易損益（架構依 帳務查詢.xlsx）
+   資料庫：repo 的 ledger/ledger.enc.json（以資料金鑰加密，經 GitHub API 即時讀寫）
+   { v, principal, settings, trades: [{ id, code, bd, bp, bq, bf?, sd?, sp?, type? }], ts }
+   每筆交易＝一批買進（可含賣出）；部分賣出時自動拆成「已賣出」與「持有中」兩筆 */
+(function () {
+  "use strict";
+
+  const PATH = "ledger/ledger.enc.json";
+  const TAB_KEY = "angus.ledger.tab";
+  const DEF_SETTINGS = {
+    rates: { "庫存買賣": { buy: 0.001425, sell: 0.001425, tax: 0.003 }, "現股當沖": { buy: 0.001425, sell: 0.001425, tax: 0.0015 } },
+    rebate: 0.5, minFee: 20,
+  };
+  const TABS = [["account", "股票帳戶"], ["trades", "交易明細"], ["stock", "股票庫存"], ["pnl", "交易損益"]];
+
+  const fmt = (v, d = 0) => (v == null || !isFinite(v) ? "--" : Number(v).toLocaleString("zh-TW", { minimumFractionDigits: d, maximumFractionDigits: d }));
+  const qty = (v) => (v == null ? "--" : Number(v).toLocaleString("zh-TW", { maximumFractionDigits: 3 }));
+  const sgn = (v, d = 0) => (v == null || !isFinite(v) ? "--" : (v > 0 ? "+" : "") + fmt(v, d));
+  const cls = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const pdig = (p) => (p != null && p % 1 !== 0 ? 2 : 0);
+  const todayISO = () => { const d = new Date(Date.now() + 8 * 3600e3); return d.toISOString().slice(0, 10); };
+  const md = (iso) => (iso ? (iso.slice(0, 4) === todayISO().slice(0, 4) ? "" : iso.slice(2, 4) + "/") + `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}` : "--");
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+  let db = null, sha = null, quotes = { rows: {} };
+  let tab = "account", pnlKind = "unreal", period = "all", custom = { from: "", to: "" };
+
+  // ------------------------------------------------------------ 計算
+  const S = () => ({ ...DEF_SETTINGS, ...(db.settings || {}), rates: { ...DEF_SETTINGS.rates, ...((db.settings || {}).rates || {}) } });
+  const nameOf = (c) => (quotes.rows[c] && quotes.rows[c][0]) || c;
+  const priceOf = (c) => { const q = quotes.rows[c]; return q && q[2] != null ? q[2] : null; };
+  const fee = (amt, rate) => (amt > 0 ? Math.max(S().minFee, Math.floor(amt * rate)) : 0);
+  const typeOf = (t) => t.type || (t.sd && t.sd === t.bd ? "現股當沖" : "庫存買賣");
+
+  // 衍生欄位（與 Excel 交易明細欄位對應）
+  function calc(t) {
+    const st = S(), r = st.rates[typeOf(t)] || st.rates["庫存買賣"];
+    const amtB = t.bp * t.bq * 1000;
+    const bf = t.bf != null ? t.bf : fee(amtB, r.buy);
+    const o = { ...t, type: typeOf(t), amtB, buyFee: bf, payable: amtB + bf, buyRebate: Math.floor(bf * st.rebate), sold: !!(t.sd && t.sp != null) };
+    if (o.sold) {
+      const amtS = t.sp * t.bq * 1000;
+      o.sellFee = fee(amtS, r.sell);
+      o.tax = Math.floor(amtS * r.tax);
+      o.sellTotal = amtS - o.sellFee - o.tax;
+      o.pnl = o.sellTotal - o.payable;
+      o.sellRebate = Math.floor(o.sellFee * st.rebate);
+    } else {
+      // 持有中：以現價估算淨值（扣除賣出手續費與證交稅）
+      const p = priceOf(t.code);
+      o.price = p;
+      if (p != null) {
+        const amt = p * t.bq * 1000;
+        o.mv = amt;
+        o.net = amt - fee(amt, r.sell) - Math.floor(amt * r.tax);
+        o.upnl = o.net - o.payable;
+      }
+    }
+    return o;
+  }
+  const all = () => db.trades.map(calc);
+
+  function inPeriod(d) {
+    if (!d) return false;
+    const t = todayISO();
+    if (period === "all") return true;
+    if (period === "today") return d === t;
+    if (period === "month") return d.slice(0, 7) === t.slice(0, 7);
+    if (period === "lastmonth") {
+      const [y, m] = t.split("-").map(Number);
+      const lm = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+      return d.slice(0, 7) === lm;
+    }
+    if (period === "custom") return (!custom.from || d >= custom.from) && (!custom.to || d <= custom.to);
+    return true;
+  }
+
+  // ------------------------------------------------------------ 讀寫資料庫
+  async function load() {
+    const r = await App.repoRead(PATH);
+    db = r.data || { v: 1, principal: 0, settings: DEF_SETTINGS, trades: [], ts: 0 };
+    db.trades = db.trades || [];
+    sha = r.sha;
+  }
+  // mutate(db) 修改資料後存檔；若其他裝置已先更新，重新讀取後再套用一次
+  async function commit(mutate, msg) {
+    for (let i = 0; i < 2; i++) {
+      const next = JSON.parse(JSON.stringify(db));
+      mutate(next);
+      next.ts = Date.now();
+      try {
+        App.bar("儲存中…");
+        sha = await App.repoWrite(PATH, next, sha, msg);
+        db = next;
+        App.bar("已儲存", "ok");
+        setTimeout(() => App.bar(""), 1500);
+        return true;
+      } catch (e) {
+        if (e.conflict && i === 0) { await load(); continue; }
+        App.bar(e.message || String(e), "err");
+        setTimeout(() => App.bar(""), 6000);
+        return false;
+      }
+    }
+    return false;
+  }
+
+  // ------------------------------------------------------------ 股票輸入（代碼或股名 → 代碼）
+  function resolveCode(input) {
+    const k = String(input || "").normalize("NFKC").trim();
+    if (!k) return null;
+    const m = k.match(/^([0-9A-Z]{4,6})\b/i);
+    if (m && quotes.rows[m[1].toUpperCase()]) return m[1].toUpperCase();
+    const hit = Object.entries(quotes.rows).find(([c, q]) => q[0] === k) || Object.entries(quotes.rows).find(([c, q]) => q[1] !== "idx" && q[1] !== "fut" && String(q[0]).startsWith(k));
+    return hit ? hit[0] : null;
+  }
+  const stockOptions = () => Object.entries(quotes.rows)
+    .filter(([, q]) => q[1] === "tse" || q[1] === "otc")
+    .map(([c, q]) => `<option value="${esc(c)} ${esc(q[0])}"></option>`).join("");
+
+  // ------------------------------------------------------------ 表單（新增／編輯／賣出）
+  function sheet(html) {
+    const el = document.createElement("div");
+    el.className = "sheet";
+    el.innerHTML = html;
+    document.body.appendChild(el);
+    document.body.classList.add("no-scroll");
+    return el;
+  }
+  function closeSheet(el) {
+    el.remove();
+    if (!document.querySelector(".sheet")) document.body.classList.remove("no-scroll");
+  }
+
+  function tradeForm(view, t) {
+    const isNew = !t;
+    t = t || { bd: todayISO() };
+    const el = sheet(`
+      <header class="sheet-head">
+        <button type="button" class="sheet-btn" data-act="cancel">取消</button>
+        <h2>${isNew ? "新增交易" : "編輯交易"}</h2>
+        <button type="button" class="sheet-btn strong" data-act="save">儲存</button>
+      </header>
+      <div class="sheet-body">
+        <form class="lg-form" autocomplete="off">
+          <label class="full">股票<input name="stock" list="lgStocks" placeholder="輸入代碼或股名，例如 2330 或 台積電" value="${t.code ? esc(t.code + " " + nameOf(t.code)) : ""}" required></label>
+          <datalist id="lgStocks">${stockOptions()}</datalist>
+          <fieldset><legend>買進</legend>
+            <label>買進日期<input type="date" name="bd" value="${esc(t.bd || "")}" required></label>
+            <label>買價<input type="number" name="bp" step="0.01" min="0" inputmode="decimal" value="${t.bp ?? ""}" required></label>
+            <label>張數<input type="number" name="bq" step="0.001" min="0.001" inputmode="decimal" value="${t.bq ?? ""}" required><small>零股可輸入到小數點後三位（0.001 張＝1 股）</small></label>
+          </fieldset>
+          <fieldset><legend>賣出（尚未賣出請留空）</legend>
+            <label>賣出日期<input type="date" name="sd" value="${esc(t.sd || "")}"></label>
+            <label>賣價<input type="number" name="sp" step="0.01" min="0" inputmode="decimal" value="${t.sp ?? ""}"></label>
+            <label>賣出張數<input type="number" name="sq" step="0.001" min="0.001" inputmode="decimal" value="${t.sd ? t.bq : ""}" placeholder="預設全部"><small>少於買進張數時，剩餘張數保留為持有中</small></label>
+          </fieldset>
+          <label class="full">交易型態<select name="type">
+            <option value="">自動（同日買賣為現股當沖）</option>
+            <option value="庫存買賣"${t.type === "庫存買賣" ? " selected" : ""}>庫存買賣</option>
+            <option value="現股當沖"${t.type === "現股當沖" ? " selected" : ""}>現股當沖</option>
+          </select></label>
+          <p class="lg-preview muted small" id="lgPreview"></p>
+          ${isNew ? "" : '<button type="button" class="btn-danger" data-act="delete">刪除這筆交易</button>'}
+        </form>
+      </div>`);
+    const f = el.querySelector("form");
+    const read = () => {
+      const v = Object.fromEntries(new FormData(f));
+      const n = (x) => (x === "" || x == null ? null : Number(x));
+      return { code: resolveCode(v.stock), bd: v.bd, bp: n(v.bp), bq: n(v.bq), sd: v.sd || null, sp: n(v.sp), sq: n(v.sq), type: v.type || null };
+    };
+    const preview = () => {
+      const v = read();
+      const box = el.querySelector("#lgPreview");
+      if (!v.code || !v.bp || !v.bq) { box.textContent = v.code ? "" : "請輸入有效的股票代碼或股名"; return; }
+      const c = calc({ code: v.code, bd: v.bd, bp: v.bp, bq: v.sd && v.sq ? Math.min(v.sq, v.bq) : v.bq, sd: v.sd, sp: v.sp, type: v.type });
+      box.innerHTML = `<b>${esc(nameOf(v.code))}</b>｜手續費(買) ${fmt(c.buyFee)}・應付 ${fmt(c.payable)}・回沖 ${fmt(c.buyRebate)}` +
+        (c.sold ? `<br>證交稅 ${fmt(c.tax)}・手續費(賣) ${fmt(c.sellFee)}・賣出總額 ${fmt(c.sellTotal)}・<span class="${cls(c.pnl)}">損益 ${sgn(c.pnl)}</span>（${c.type}）` : "");
+    };
+    f.addEventListener("input", preview);
+    preview();
+    el.addEventListener("click", async (e) => {
+      const act = e.target.closest("[data-act]")?.dataset.act;
+      if (act === "cancel") closeSheet(el);
+      if (act === "delete") {
+        if (!confirm("確定要刪除這筆交易？")) return;
+        closeSheet(el);
+        if (await commit((d) => { d.trades = d.trades.filter((x) => x.id !== t.id); }, "帳務：刪除交易")) draw(view);
+      }
+      if (act === "save") {
+        const v = read();
+        if (!v.code) { App.toast("請輸入有效的股票代碼或股名"); return; }
+        if (!v.bd || !(v.bp > 0) || !(v.bq > 0)) { App.toast("請填寫買進日期、買價與張數"); return; }
+        if ((v.sd || v.sp != null) && !(v.sd && v.sp > 0)) { App.toast("賣出需同時填寫日期與賣價"); return; }
+        if (v.sd && v.sd < v.bd) { App.toast("賣出日期不可早於買進日期"); return; }
+        const sq = v.sd ? Math.min(v.sq || v.bq, v.bq) : null;
+        closeSheet(el);
+        const ok = await commit((d) => {
+          const base = { code: v.code, bd: v.bd, bp: v.bp, type: v.type || undefined };
+          const list = d.trades.filter((x) => x.id !== (t && t.id));
+          if (v.sd && sq < v.bq - 1e-9) { // 部分賣出：拆成已賣出與持有中兩筆，買進手續費依張數分攤
+            const bfAll = fee(v.bp * v.bq * 1000, (S().rates[v.type || "庫存買賣"] || S().rates["庫存買賣"]).buy);
+            const soldBf = Math.round(bfAll * sq / v.bq);
+            list.push({ id: (t && t.id) || uid(), ...base, bq: sq, bf: soldBf, sd: v.sd, sp: v.sp });
+            list.push({ id: uid(), ...base, bq: +(v.bq - sq).toFixed(3), bf: bfAll - soldBf });
+          } else {
+            list.push({ id: (t && t.id) || uid(), ...base, bq: v.bq, ...(t && t.bf != null && t.bq === v.bq && t.bp === v.bp ? { bf: t.bf } : {}),
+              ...(v.sd ? { sd: v.sd, sp: v.sp } : {}) });
+          }
+          d.trades = list;
+        }, isNew ? "帳務：新增交易" : "帳務：修改交易");
+        if (ok) draw(view);
+      }
+    });
+  }
+
+  // 由庫存賣出：依先進先出分配到各筆持有中的交易
+  function sellForm(view, code) {
+    const lots = all().filter((t) => !t.sold && t.code === code).sort((a, b) => (a.bd < b.bd ? -1 : 1));
+    const total = lots.reduce((s, t) => s + t.bq, 0);
+    const el = sheet(`
+      <header class="sheet-head">
+        <button type="button" class="sheet-btn" data-act="cancel">取消</button>
+        <h2>賣出 ${esc(nameOf(code))}</h2>
+        <button type="button" class="sheet-btn strong" data-act="save">儲存</button>
+      </header>
+      <div class="sheet-body">
+        <form class="lg-form" autocomplete="off">
+          <p class="muted small full">庫存 ${qty(total)} 張；賣出時依買進日期先進先出。</p>
+          <label>賣出日期<input type="date" name="sd" value="${todayISO()}" required></label>
+          <label>賣價<input type="number" name="sp" step="0.01" min="0" inputmode="decimal" value="${priceOf(code) ?? ""}" required></label>
+          <label>賣出張數<input type="number" name="sq" step="0.001" min="0.001" max="${total}" inputmode="decimal" value="${total}" required></label>
+        </form>
+      </div>`);
+    el.addEventListener("click", async (e) => {
+      const act = e.target.closest("[data-act]")?.dataset.act;
+      if (act === "cancel") closeSheet(el);
+      if (act !== "save") return;
+      const v = Object.fromEntries(new FormData(el.querySelector("form")));
+      const sp = Number(v.sp), sq = Math.min(Number(v.sq), total);
+      if (!v.sd || !(sp > 0) || !(sq > 0)) { App.toast("請填寫賣出日期、賣價與張數"); return; }
+      closeSheet(el);
+      const ok = await commit((d) => {
+        let left = sq;
+        for (const lot of lots) {
+          if (left <= 1e-9) break;
+          const t = d.trades.find((x) => x.id === lot.id);
+          if (!t || v.sd < t.bd) continue;
+          if (t.bq <= left + 1e-9) {
+            left -= t.bq;
+            Object.assign(t, { sd: v.sd, sp, bf: lot.buyFee });
+          } else { // 拆批
+            const part = +left.toFixed(3), soldBf = Math.round(lot.buyFee * part / t.bq);
+            d.trades.push({ ...t, id: uid(), bq: +(t.bq - part).toFixed(3), bf: lot.buyFee - soldBf });
+            Object.assign(t, { bq: part, bf: soldBf, sd: v.sd, sp });
+            left = 0;
+          }
+        }
+      }, "帳務：賣出");
+      if (ok) draw(view);
+    });
+  }
+
+  // ------------------------------------------------------------ 各分頁
+  function holdings() {
+    const g = {};
+    for (const t of all().filter((x) => !x.sold)) {
+      const h = g[t.code] || (g[t.code] = { code: t.code, bq: 0, amtB: 0, payable: 0, mv: 0, net: 0, priced: true, rebate: 0 });
+      h.bq += t.bq; h.amtB += t.amtB; h.payable += t.payable; h.rebate += t.buyRebate;
+      if (t.mv == null) h.priced = false; else { h.mv += t.mv; h.net += t.net; }
+    }
+    return Object.values(g).map((h) => ({ ...h, bq: +h.bq.toFixed(3), price: priceOf(h.code), avg: h.amtB / (h.bq * 1000), upnl: h.priced ? h.net - h.payable : null }));
+  }
+
+  function accountTab() {
+    const T = all();
+    const realized = T.filter((t) => t.sold).reduce((s, t) => s + t.pnl, 0);
+    const rebates = T.reduce((s, t) => s + t.buyRebate + (t.sold ? t.sellRebate : 0), 0);
+    const cost = T.filter((t) => !t.sold).reduce((s, t) => s + t.payable, 0);
+    const mv = holdings().reduce((s, h) => s + h.mv, 0);
+    const p = db.principal || 0;
+    const balance = p + realized + rebates - cost;
+    const totalV = balance + mv;
+    const gain = totalV - p;
+    const st = S();
+    const rateRow = (k) => `<tr><td>${k}</td>
+      <td><input type="number" step="0.000001" data-rate="${k}.buy" value="${st.rates[k].buy}"></td>
+      <td><input type="number" step="0.000001" data-rate="${k}.sell" value="${st.rates[k].sell}"></td>
+      <td><input type="number" step="0.0001" data-rate="${k}.tax" value="${st.rates[k].tax}"></td></tr>`;
+    return `
+      <article class="card lg-account">
+        <h3>Angus股票帳戶</h3>
+        <dl>
+          <dt>本金</dt><dd><input type="number" id="lgPrincipal" step="1" inputmode="numeric" value="${p || ""}" placeholder="輸入本金"> 元</dd>
+          <dt>帳戶餘額</dt><dd><b>${fmt(balance)}</b> 元</dd>
+          <dt>股票市值</dt><dd><b>${fmt(mv)}</b> 元</dd>
+          <dt>帳戶總額</dt><dd><b>${fmt(totalV)}</b> 元</dd>
+          <dt>交易盈虧</dt><dd><b class="${cls(gain)}">${sgn(gain)}</b> 元　<b class="${cls(gain)}">${p ? sgn(gain / p * 100, 2) : "--"}</b> %</dd>
+        </dl>
+        <p class="muted small">帳戶餘額＝本金＋已實現損益＋手續費回沖－持股投入成本；帳戶總額＝帳戶餘額＋股票市值（依最新報價）。</p>
+      </article>
+      <div class="section-title"><h2>費率</h2></div>
+      <article class="card">
+        <div class="tbl-wrap"><table class="tbl lg-rates">
+          <thead><tr><th>交易型態</th><th>買進手續費</th><th>賣出手續費</th><th>證交稅</th></tr></thead>
+          <tbody>${rateRow("庫存買賣")}${rateRow("現股當沖")}</tbody>
+        </table></div>
+        <div class="lg-rate-more">
+          <label>券商手續費折讓 <input type="number" step="0.01" min="0" max="1" data-set="rebate" value="${st.rebate}"></label>
+          <label>最低手續費 <input type="number" step="1" min="0" data-set="minFee" value="${st.minFee}"> 元</label>
+          <button type="button" class="btn-primary" data-act="saveRates">儲存費率</button>
+        </div>
+        <p class="muted small">手續費＝成交金額×費率（無條件捨去，未達最低手續費以最低計）；證交稅＝賣出金額×稅率；手續費回沖＝手續費×折讓。</p>
+      </article>`;
+  }
+
+  function tradesTab() {
+    const T = all().sort((a, b) => ((b.sd || b.bd) > (a.sd || a.bd) ? 1 : (b.sd || b.bd) < (a.sd || a.bd) ? -1 : 0));
+    if (!T.length) return '<article class="card empty">尚無交易，按右上角「＋ 新增交易」開始記錄</article>';
+    const rows = T.map((t) => `
+      <tr data-id="${esc(t.id)}" class="link" tabindex="0">
+        <td class="stk"><b>${esc(nameOf(t.code))}</b><small>${esc(t.code)}</small></td>
+        <td>${esc(t.bd)}</td><td class="num">${fmt(t.bp, 2)}</td><td class="num">${qty(t.bq)}</td>
+        <td class="num">${fmt(t.buyFee)}</td><td class="num">${fmt(t.payable)}</td><td class="num">${fmt(t.buyRebate)}</td>
+        <td class="sep">${t.sold ? esc(t.sd) : "--"}</td><td class="num">${t.sold ? fmt(t.sp, 2) : "--"}</td><td class="num">${t.sold ? qty(t.bq) : "--"}</td>
+        <td class="num">${t.sold ? fmt(t.tax) : "--"}</td><td class="num">${t.sold ? fmt(t.sellFee) : "--"}</td><td class="num">${t.sold ? fmt(t.sellTotal) : "--"}</td>
+        <td class="num ${cls(t.pnl)}">${t.sold ? sgn(t.pnl) : "--"}</td><td class="num">${t.sold ? fmt(t.sellRebate) : "--"}</td>
+        <td>${esc(t.type)}</td><td><span class="lg-st ${t.sold ? "done" : "hold"}">${t.sold ? "已賣出" : "持有中"}</span></td>
+      </tr>`).join("");
+    const cards = T.map((t) => `
+      <li data-id="${esc(t.id)}" class="link" tabindex="0">
+        <div class="lg-c-head"><b>${esc(nameOf(t.code))}</b><small>${esc(t.code)}・${esc(t.type)}</small><span class="lg-st ${t.sold ? "done" : "hold"}">${t.sold ? "已賣出" : "持有中"}</span></div>
+        <div class="lg-c-row"><span class="muted">買</span><span>${md(t.bd)}　${fmt(t.bp, 2)} × ${qty(t.bq)} 張</span><span>應付 ${fmt(t.payable)}</span></div>
+        <div class="lg-c-sub muted small">手續費 ${fmt(t.buyFee)}・回沖 ${fmt(t.buyRebate)}</div>
+        ${t.sold ? `<div class="lg-c-row"><span class="muted">賣</span><span>${md(t.sd)}　${fmt(t.sp, 2)} × ${qty(t.bq)} 張</span><span>收 ${fmt(t.sellTotal)}</span></div>
+        <div class="lg-c-sub muted small">證交稅 ${fmt(t.tax)}・手續費 ${fmt(t.sellFee)}・回沖 ${fmt(t.sellRebate)}<b class="${cls(t.pnl)}">損益 ${sgn(t.pnl)}</b></div>` : ""}
+      </li>`).join("");
+    return `
+      <p class="muted small note">點選交易可修改或刪除；部分賣出會自動拆成已賣出與持有中兩筆。</p>
+      <ul class="lg-cards">${cards}</ul>
+      <article class="card lg-wide"><div class="tbl-wrap"><table class="tbl lg-tbl">
+        <thead><tr><th class="stk">股票</th><th>買進日期</th><th>買價</th><th>張數</th><th>手續費(買)</th><th>應付金額</th><th>手續費回沖(買)</th>
+          <th class="sep">賣出日期</th><th>賣價</th><th>張數</th><th>證交稅</th><th>手續費(賣)</th><th>賣出總額</th><th>交易損益</th><th>手續費回沖(賣)</th><th>交易型態</th><th>狀態</th></tr></thead>
+        <tbody>${rows}</tbody></table></div></article>`;
+  }
+
+  function stockTab() {
+    const H = holdings().sort((a, b) => b.mv - a.mv);
+    if (!H.length) return '<article class="card empty">目前沒有庫存</article>';
+    const total = H.reduce((s, h) => s + h.mv, 0);
+    return `
+      <article class="card"><div class="tbl-wrap"><table class="tbl lg-tbl">
+        <thead><tr><th class="stk">股票</th><th>現價</th><th>張數</th><th>市值</th><th></th></tr></thead>
+        <tbody>${H.map((h) => `<tr>
+          <td class="stk"><b>${esc(nameOf(h.code))}</b><small>${esc(h.code)}</small></td>
+          <td class="num">${fmt(h.price, pdig(h.price))}</td><td class="num">${qty(h.bq)}</td><td class="num"><b>${fmt(h.mv)}</b></td>
+          <td><button type="button" class="btn-ghost lg-sell" data-sell="${esc(h.code)}">賣出</button></td></tr>`).join("")}</tbody>
+        <tfoot><tr><td colspan="3" class="num">總市值：</td><td class="num"><b>${fmt(total)}</b></td><td></td></tr></tfoot>
+      </table></div></article>
+      <p class="muted small note">現價取自網站最新報價（報價時間 ${esc(quotes.updated || "--")}）。</p>`;
+  }
+
+  function pnlTab() {
+    const T = all();
+    const PER = [["all", "全部"], ["today", "本日"], ["lastmonth", "上月"], ["month", "本月"], ["custom", "自訂"]];
+    const rows = [];
+    let rebate = 0;
+    if (pnlKind !== "real") { // 未實現：依買進日期篩選
+      const g = {};
+      for (const t of T.filter((x) => !x.sold && inPeriod(x.bd))) {
+        const h = g[t.code] || (g[t.code] = { kind: "未實現", code: t.code, bq: 0, amtB: 0, cost: 0, net: 0, mv: 0, ok: true });
+        h.bq += t.bq; h.amtB += t.amtB; h.cost += t.payable; rebate += t.buyRebate;
+        if (t.net == null) h.ok = false; else { h.net += t.net; h.mv += t.mv; }
+      }
+      Object.values(g).forEach((h) => rows.push({ ...h, price: priceOf(h.code), avg: h.amtB / (h.bq * 1000), pnl: h.ok ? h.net - h.cost : null }));
+    }
+    if (pnlKind !== "unreal") { // 已實現：依賣出日期篩選
+      const g = {};
+      for (const t of T.filter((x) => x.sold && inPeriod(x.sd))) {
+        const h = g[t.code] || (g[t.code] = { kind: "已實現", code: t.code, bq: 0, amtB: 0, amtS: 0, cost: 0, net: 0, mv: 0, ok: true });
+        h.bq += t.bq; h.amtB += t.amtB; h.amtS += t.sp * t.bq * 1000; h.cost += t.payable; h.net += t.sellTotal; rebate += t.buyRebate + t.sellRebate;
+      }
+      Object.values(g).forEach((h) => rows.push({ ...h, price: h.amtS / (h.bq * 1000), avg: h.amtB / (h.bq * 1000), pnl: h.net - h.cost }));
+    }
+    rows.sort((a, b) => (b.pnl ?? -Infinity) - (a.pnl ?? -Infinity));
+    const sum = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
+    const totalPnl = sum("pnl"), totalCost = sum("cost");
+    return `
+      <div class="seg lg-kind" role="group" aria-label="損益類別">${[["unreal", "未實現損益"], ["real", "已實現損益"], ["all", "合併損益"]]
+        .map(([k, t]) => `<button type="button" data-kind="${k}" aria-pressed="${k === pnlKind}">${t}</button>`).join("")}</div>
+      <div class="seg lg-period" role="group" aria-label="查詢區間">${PER.map(([k, t]) => `<button type="button" data-period="${k}" aria-pressed="${k === period}">${t}</button>`).join("")}</div>
+      ${period === "custom" ? `<div class="lg-custom"><input type="date" id="lgFrom" value="${esc(custom.from)}"> ～ <input type="date" id="lgTo" value="${esc(custom.to)}"></div>` : ""}
+      <p class="muted small note">${pnlKind === "unreal" ? "未實現損益依買進日期篩選，以最新報價估算（淨值已扣除預估賣出手續費與證交稅）" : pnlKind === "real" ? "已實現損益依賣出日期篩選；市價欄為賣出均價、淨值為賣出總額" : "合併：未實現依買進日期、已實現依賣出日期篩選"}。</p>
+      <ul class="lg-cards lg-pnl-cards">${rows.map((r) => `
+        <li>
+          <div class="lg-c-head"><b>${esc(nameOf(r.code))}</b><small>${esc(r.code)}${pnlKind === "all" ? "・" + r.kind : ""}</small>
+            <span class="lg-pnl-v ${cls(r.pnl)}"><b>${sgn(r.pnl)}</b><small>${r.pnl == null ? "--" : sgn(r.pnl / r.cost * 100, 2) + "%"}</small></span></div>
+          <div class="lg-kv"><span>市價<b>${fmt(r.price, 2)}</b></span><span>成交均價<b>${fmt(r.avg, 2)}</b></span><span>張數<b>${qty(+r.bq.toFixed(3))}</b></span></div>
+          <div class="lg-kv"><span>投入成本<b>${fmt(r.cost)}</b></span><span>淨值<b>${fmt(r.ok === false ? null : r.net)}</b></span></div>
+        </li>`).join("") || '<li class="empty">此區間沒有資料</li>'}</ul>
+      <article class="card lg-wide"><div class="tbl-wrap"><table class="tbl lg-tbl lg-pnl">
+        <thead><tr><th class="stk">股票</th><th>市價</th><th>成交<br>均價</th><th>張數</th><th>投入<br>成本</th><th>投資<br>損益(元)</th><th>淨值</th><th>報酬率<br>(%)</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr>
+          <td class="stk"><b>${esc(nameOf(r.code))}</b><small>${esc(r.code)}${pnlKind === "all" ? "・" + r.kind : ""}</small></td>
+          <td class="num">${fmt(r.price, 2)}</td><td class="num">${fmt(r.avg, 2)}</td><td class="num">${qty(+r.bq.toFixed(3))}</td>
+          <td class="num">${fmt(r.cost)}</td><td class="num ${cls(r.pnl)}"><b>${sgn(r.pnl)}</b></td><td class="num">${fmt(r.ok === false ? null : r.net)}</td>
+          <td class="num ${cls(r.pnl)}">${r.pnl == null ? "--" : sgn(r.pnl / r.cost * 100, 2)}</td></tr>`).join("") || '<tr><td colspan="8" class="empty">此區間沒有資料</td></tr>'}</tbody>
+      </table></div></article>
+      <article class="card"><div class="lg-sum">
+        <span>總市值：<b>${fmt(sum("mv"))}</b></span>
+        <span>投資損益：<b class="${cls(totalPnl)}">${sgn(totalPnl)}</b>${totalCost ? `（<span class="${cls(totalPnl)}">${sgn(totalPnl / totalCost * 100, 2)}%</span>）` : ""}</span>
+        <span>手續費回沖：<b>${fmt(rebate)}</b></span>
+      </div></article>`;
+  }
+
+  // ------------------------------------------------------------ 頁面
+  function draw(view) {
+    const body = tab === "account" ? accountTab() : tab === "trades" ? tradesTab() : tab === "stock" ? stockTab() : pnlTab();
+    view.innerHTML = `
+      <div class="seg lg-tabs" role="tablist">${TABS.map(([k, t]) => `<button type="button" role="tab" data-tab="${k}" aria-pressed="${k === tab}">${t}</button>`).join("")}</div>
+      <div class="lg-body">${body}</div>`;
+  }
+
+  async function render(view) {
+    try { tab = localStorage.getItem(TAB_KEY) || tab; } catch (e) { /* ignore */ }
+    const [q] = await Promise.all([App.loadData("quotes").catch(() => ({ rows: {} })), load()]);
+    quotes = q;
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "action-btn";
+    add.innerHTML = "<span>＋ 新增交易</span>";
+    add.addEventListener("click", () => tradeForm(view));
+    App.setAction(add);
+    draw(view);
+
+    view.onclick = async (e) => {
+      const tb = e.target.closest("[data-tab]");
+      if (tb) { tab = tb.dataset.tab; try { localStorage.setItem(TAB_KEY, tab); } catch (err) { /* ignore */ } draw(view); return; }
+      const k = e.target.closest("[data-kind]");
+      if (k) { pnlKind = k.dataset.kind; draw(view); return; }
+      const p = e.target.closest("[data-period]");
+      if (p) { period = p.dataset.period; draw(view); return; }
+      const s = e.target.closest("[data-sell]");
+      if (s) { sellForm(view, s.dataset.sell); return; }
+      const tr = e.target.closest("[data-id]");
+      if (tr) { const t = db.trades.find((x) => x.id === tr.dataset.id); if (t) tradeForm(view, t); return; }
+      if (e.target.closest("[data-act=saveRates]")) {
+        const rates = JSON.parse(JSON.stringify(S().rates));
+        view.querySelectorAll("[data-rate]").forEach((i) => { const [t, f] = i.dataset.rate.split("."); rates[t][f] = Number(i.value) || 0; });
+        const rebate = Number(view.querySelector("[data-set=rebate]").value) || 0;
+        const minFee = Number(view.querySelector("[data-set=minFee]").value) || 0;
+        if (await commit((d) => { d.settings = { rates, rebate, minFee }; }, "帳務：修改費率")) draw(view);
+      }
+    };
+    view.onchange = async (e) => {
+      if (e.target.id === "lgPrincipal") {
+        const v = Number(e.target.value) || 0;
+        if (await commit((d) => { d.principal = v; }, "帳務：修改本金")) draw(view);
+      }
+      if (e.target.id === "lgFrom" || e.target.id === "lgTo") {
+        custom[e.target.id === "lgFrom" ? "from" : "to"] = e.target.value;
+        draw(view);
+      }
+    };
+  }
+
+  App.register({ id: "ledger", title: "帳務查詢", icon: "💰", render });
+})();

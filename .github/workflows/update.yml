@@ -23,7 +23,7 @@ on:
     - cron: "5 6 * * *"
   push:
     branches: [main]
-    paths-ignore: ["state/**", "site/data/intl.enc.json", "site/data/intl_list.enc.json", "site/data/instrank.enc.json", "site/data/home.enc.json", "site/data/quotes.enc.json", "site/data/watchlist.enc.json", "site/data/stocks.enc.json", "site/data/ohlc.enc.json"]
+    paths-ignore: ["state/**", "ledger/**", "site/data/intl.enc.json", "site/data/intl_list.enc.json", "site/data/instrank.enc.json", "site/data/home.enc.json", "site/data/quotes.enc.json", "site/data/watchlist.enc.json", "site/data/stocks.enc.json", "site/data/ohlc.enc.json"]
   workflow_dispatch:
     inputs:
       force:

@@ -7,7 +7,12 @@
 
   // ------------------------------------------------------------ 加解密
   const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-  const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const toB64 = (buf) => {
+    const u8 = new Uint8Array(buf);
+    let s = "";
+    for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    return btoa(s);
+  };
 
   function storeGet() {
     try { return sessionStorage.getItem(KEY_STORE) || localStorage.getItem(KEY_STORE); } catch (e) { return null; }
@@ -31,6 +36,40 @@
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, dataKey, new TextEncoder().encode(JSON.stringify(obj)));
     return { v: 1, iv: toB64(iv), ct: toB64(ct) };
+  }
+
+  async function decryptJSON(blob) {
+    let pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(blob.iv) }, dataKey, b64(blob.ct));
+    if (blob.z === "gzip") pt = await new Response(new Blob([pt]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+
+  // ------------------------------------------------------------ repo 內的加密資料檔（帳務等）：透過 GitHub API 即時讀寫
+  // 讀取：{ data, sha }（檔案不存在時 data 為 null）；寫入需權杖具備 Contents 寫入權限，sha 用於避免覆寫他處的新版本
+  async function repoRead(path) {
+    const cfg = await loadData("dispatch");
+    const r = await fetch(`https://api.github.com/repos/${cfg.repo}/contents/${path}?ref=main&t=${Date.now()}`, {
+      headers: { Authorization: `Bearer ${cfg.token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      cache: "no-store",
+    });
+    if (r.status === 404) return { data: null, sha: null };
+    if (!r.ok) throw new Error("讀取資料失敗 (" + r.status + ")");
+    const j = await r.json();
+    const blob = JSON.parse(new TextDecoder().decode(b64(j.content.replace(/\s/g, ""))));
+    return { data: await decryptJSON(blob), sha: j.sha };
+  }
+  async function repoWrite(path, obj, sha, message) {
+    const cfg = await loadData("dispatch");
+    const blob = await encryptJSON(obj);
+    const r = await fetch(`https://api.github.com/repos/${cfg.repo}/contents/${path}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${cfg.token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json" },
+      body: JSON.stringify({ message, branch: "main", content: btoa(JSON.stringify(blob)), ...(sha ? { sha } : {}) }),
+    });
+    if (r.status === 409 || r.status === 422) { const e = new Error("資料已在其他裝置更新"); e.conflict = true; throw e; }
+    if (r.status === 403 || r.status === 404) throw new Error("權杖沒有寫入權限：請在 GitHub 權杖設定加上「Contents：Read and write」");
+    if (!r.ok) throw new Error("儲存失敗 (" + r.status + ")");
+    return (await r.json()).content.sha;
   }
 
   async function unwrap(user, pwd) {
@@ -116,7 +155,10 @@
     document.querySelectorAll("#menuList a").forEach((a) => a.classList.toggle("active", a.dataset.id === (page.menu || page.id)));
     document.querySelectorAll(".sheet").forEach((s) => s.remove());
     document.body.classList.remove("no-scroll");
-    const view = $("#view");
+    // 換頁時換成新的容器，清除前一頁掛在容器上的事件處理
+    const old = $("#view");
+    const view = old.cloneNode(false);
+    old.replaceWith(view);
     view.innerHTML = '<div class="skeleton"></div>';
     try {
       window.scrollTo(0, 0);
@@ -306,7 +348,7 @@
   }
 
   window.App = {
-    start, register, upcoming: upcomingItem, loadData, encryptJSON, toast, bar,
+    start, register, upcoming: upcomingItem, loadData, encryptJSON, decryptJSON, repoRead, repoWrite, toast, bar,
     runUpdate, isUpdating: () => updating,
     setAction: (el) => { const a = $("#pageAction"); a.innerHTML = ""; if (el) a.appendChild(el); }, setUpdated: (t) => { $("#drawerUpdated").textContent = t ? "資料更新：" + t : ""; } };
 })();
