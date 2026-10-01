@@ -3,7 +3,7 @@
    { v, principal, settings, trades: [{ id, code, bd, bp, bq, bf?, sd?, sp?, type?, xr?, xd? }],
      transfers: [{ id, date, kind: "in"|"out", amount, note }], ts }
    xr＝除權：每股配股（元，面額 10 元）→ 配股股數＝持有股數×xr÷10（例：2 元＝每張配 200 股），配股成本為 0
-   xd＝除息：實收現金股利總額（元），計入該筆損益
+   xd＝除息：每股配息（元）→ 現金股利＝持有股數（不含本次配股）×xd，無條件捨去到元，計入該筆損益
    每筆交易＝一批買進（可含賣出）；部分賣出時自動拆成「已賣出」與「持有中」兩筆 */
 (function () {
   "use strict";
@@ -42,7 +42,7 @@
     const st = S(), r = st.rates[typeOf(t)] || st.rates["庫存買賣"];
     const amtB = t.bp * t.bq * 1000;
     const bf = t.bf != null ? t.bf : fee(amtB, r.buy);
-    const div = t.xd || 0;
+    const div = t.xd ? Math.floor(t.bq * 1000 * t.xd + 1e-6) : 0; // 除息現金股利（元）
     const bonus = t.xr ? Math.floor(t.bq * 1000 * t.xr / 10 + 1e-6) : 0; // 除權配股（股）
     const sh = t.bq * 1000 + bonus;                                      // 含配股的總股數
     const o = { ...t, type: typeOf(t), amtB, buyFee: bf, payable: amtB + bf, buyRebate: Math.floor(bf * st.rebate), sold: !!(t.sd && t.sp != null),
@@ -171,7 +171,7 @@
             <label>賣價<input type="number" name="sp" step="0.01" min="0" inputmode="decimal" value="${t.sp ?? ""}"></label>
             <label>賣出張數<input type="number" name="sq" step="0.001" min="0.001" inputmode="decimal" value="${t.sd ? calcTq(t) : ""}" placeholder="預設全部"><small>含配股；少於持有張數時，剩餘保留為持有中</small></label>
             <label>除權（元／股）<input type="number" name="xr" step="0.0001" min="0" inputmode="decimal" value="${t.xr ?? ""}" placeholder="0"><small>股票股利，例：2 元＝每張配 200 股（持有中也可填）</small></label>
-            <label>除息（元）<input type="number" name="xd" step="1" min="0" inputmode="decimal" value="${t.xd ?? ""}" placeholder="0"><small>實收現金股利總額，計入損益（持有中也可填）</small></label>
+            <label>除息（元／股）<input type="number" name="xd" step="0.0001" min="0" inputmode="decimal" value="${t.xd ?? ""}" placeholder="0"><small>現金股利，例：3.5 元＝每張 3,500 元（持有中也可填）</small></label>
           </fieldset>
           <label class="full">交易型態<select name="type">
             <option value="">自動（同日買賣為現股當沖）</option>
@@ -194,9 +194,10 @@
       if (!v.code || !v.bp || !v.bq) { box.textContent = v.code ? "" : "請輸入有效的股票代碼或股名"; return; }
       const tot = v.bq * (1 + (v.xr || 0) / 10); // 含配股的持有張數
       const k = v.sd && v.sq ? Math.min(v.sq, tot) / tot : 1; // 部分賣出時預覽賣出部分（除息依張數分攤）
-      const c = calc({ code: v.code, bd: v.bd, bp: v.bp, bq: v.bq * k, sd: v.sd, sp: v.sp, type: v.type, xr: v.xr, xd: v.xd && Math.round(v.xd * k) });
+      const c = calc({ code: v.code, bd: v.bd, bp: v.bp, bq: v.bq * k, sd: v.sd, sp: v.sp, type: v.type, xr: v.xr, xd: v.xd });
       box.innerHTML = `<b>${esc(nameOf(v.code))}</b>｜手續費(買) ${fmt(c.buyFee)}・應付 ${fmt(c.payable)}・回沖 ${fmt(c.buyRebate)}` +
         (c.bonus ? `<br>除權配股 ${fmt(c.bonus)} 股，合計 ${qty(c.tq)} 張` : "") +
+        (c.div ? `<br>除息現金股利 ${fmt(c.div)} 元` : "") +
         (c.sold ? `<br>證交稅 ${fmt(c.tax)}・手續費(賣) ${fmt(c.sellFee)}・賣出總額 ${fmt(c.sellTotal)}${c.div ? `・除息 ${fmt(c.div)}` : ""}・<span class="${cls(c.pnl)}">損益 ${sgn(c.pnl)}</span>（${c.type}）` : "") +
         `<br>損益兩平價格 ${fmt(c.be, 2)}`;
     };
@@ -221,18 +222,18 @@
         closeSheet(el);
         const ok = await commit((d) => {
           const base = { code: v.code, bd: v.bd, bp: v.bp, type: v.type || undefined };
-          const xd = v.xd || 0;
-          if (v.xr) base.xr = v.xr; // 每股配股為比率，拆批時兩筆相同
+          if (v.xr) base.xr = v.xr; // 每股配股、配息為比率，拆批時兩筆相同
+          if (v.xd) base.xd = v.xd;
           const list = d.trades.filter((x) => x.id !== (t && t.id));
           if (v.sd && sq < tot - 1e-9) { // 部分賣出：拆成已賣出與持有中兩筆，買進手續費、除息依張數分攤
             const k = sq / tot;
             const bfAll = fee(v.bp * v.bq * 1000, (S().rates[v.type || "庫存買賣"] || S().rates["庫存買賣"]).buy);
-            const soldBf = Math.round(bfAll * k), soldXd = Math.round(xd * k), soldBq = +(v.bq * k).toFixed(6);
-            list.push({ id: (t && t.id) || uid(), ...base, bq: soldBq, bf: soldBf, sd: v.sd, sp: v.sp, ...(xd ? { xd: soldXd } : {}) });
-            list.push({ id: uid(), ...base, bq: +(v.bq - soldBq).toFixed(6), bf: bfAll - soldBf, ...(xd ? { xd: xd - soldXd } : {}) });
+            const soldBf = Math.round(bfAll * k), soldBq = +(v.bq * k).toFixed(6);
+            list.push({ id: (t && t.id) || uid(), ...base, bq: soldBq, bf: soldBf, sd: v.sd, sp: v.sp });
+            list.push({ id: uid(), ...base, bq: +(v.bq - soldBq).toFixed(6), bf: bfAll - soldBf });
           } else {
             list.push({ id: (t && t.id) || uid(), ...base, bq: v.bq, ...(t && t.bf != null && t.bq === v.bq && t.bp === v.bp ? { bf: t.bf } : {}),
-              ...(v.sd ? { sd: v.sd, sp: v.sp } : {}), ...(xd ? { xd } : {}) });
+              ...(v.sd ? { sd: v.sd, sp: v.sp } : {}) });
           }
           d.trades = list;
         }, isNew ? "帳務：新增交易" : "帳務：修改交易");
@@ -276,14 +277,12 @@
           if (lot.tq <= left + 1e-9) {
             left -= lot.tq;
             Object.assign(t, { sd: v.sd, sp, bf: lot.buyFee });
-          } else { // 拆批（依含配股張數比例；每股配股比率兩筆相同）
+          } else { // 拆批（依含配股張數比例；每股配股、配息兩筆相同）
             const k = left / lot.tq, part = +(t.bq * k).toFixed(6), soldBf = Math.round(lot.buyFee * k);
-            const sdv = t.xd ? Math.round(t.xd * k) : 0;
             const rest = { ...t, id: uid(), bq: +(t.bq - part).toFixed(6), bf: lot.buyFee - soldBf };
-            if (t.xd) rest.xd = t.xd - sdv;
             d.trades.push(rest);
             Object.assign(t, { bq: part, bf: soldBf, sd: v.sd, sp });
-            if (t.xd) t.xd = sdv;
+
             left = 0;
           }
         }
@@ -427,7 +426,7 @@
         <td class="num">${fmt(t.buyFee)}</td><td class="num">${fmt(t.payable)}</td><td class="num">${fmt(t.buyRebate)}</td>
         <td class="sep">${t.sold ? esc(t.sd) : "--"}</td><td class="num">${t.sold ? fmt(t.sp, 2) : "--"}</td><td class="num">${t.sold ? qty(t.tq) : "--"}</td>
         <td class="num">${t.sold ? fmt(t.tax) : "--"}</td><td class="num">${t.sold ? fmt(t.sellFee) : "--"}</td><td class="num">${t.sold ? fmt(t.sellTotal) : "--"}</td>
-        <td class="num">${t.xr ? `${fmt(t.xr, 2)} 元<small>（+${fmt(t.bonus)} 股）</small>` : "--"}</td><td class="num">${t.xd ? fmt(t.xd) : "--"}</td>
+        <td class="num">${t.xr ? `${fmt(t.xr, 2)} 元<small>（+${fmt(t.bonus)} 股）</small>` : "--"}</td><td class="num">${t.xd ? `${fmt(t.xd, 2)} 元<small>（${fmt(t.div)} 元）</small>` : "--"}</td>
         <td class="num ${cls(t.pnl)}">${t.sold ? sgn(t.pnl) : "--"}</td><td class="num">${t.sold ? fmt(t.sellRebate) : "--"}</td>
         <td>${esc(t.type)}</td><td><span class="lg-st ${t.sold ? "done" : "hold"}">${t.sold ? "已賣出" : "持有中"}</span></td>
       </tr>`).join("");
@@ -436,7 +435,7 @@
         <div class="lg-c-head"><b>${esc(nameOf(t.code))}</b><small>${esc(t.code)}・${esc(t.type)}</small><span class="lg-st ${t.sold ? "done" : "hold"}">${t.sold ? "已賣出" : "持有中"}</span></div>
         <div class="lg-c-row"><span class="muted">買</span><span>${md(t.bd)}　${fmt(t.bp, 2)} × ${qty(t.bq)} 張</span><span>應付 ${fmt(t.payable)}</span></div>
         <div class="lg-c-sub muted small">手續費 ${fmt(t.buyFee)}・回沖 ${fmt(t.buyRebate)}</div>
-        ${t.xr || t.xd ? `<div class="lg-c-sub muted small">${t.xr ? `除權 ${fmt(t.xr, 2)} 元（配 ${fmt(t.bonus)} 股）` : ""}${t.xr && t.xd ? "・" : ""}${t.xd ? `除息 ${fmt(t.xd)}` : ""}</div>` : ""}
+        ${t.xr || t.xd ? `<div class="lg-c-sub muted small">${t.xr ? `除權 ${fmt(t.xr, 2)} 元（配 ${fmt(t.bonus)} 股）` : ""}${t.xr && t.xd ? "・" : ""}${t.xd ? `除息 ${fmt(t.xd, 2)} 元（${fmt(t.div)} 元）` : ""}</div>` : ""}
         ${t.sold ? `<div class="lg-c-row"><span class="muted">賣</span><span>${md(t.sd)}　${fmt(t.sp, 2)} × ${qty(t.tq)} 張</span><span>收 ${fmt(t.sellTotal)}</span></div>
         <div class="lg-c-sub muted small">證交稅 ${fmt(t.tax)}・手續費 ${fmt(t.sellFee)}・回沖 ${fmt(t.sellRebate)}<b class="${cls(t.pnl)}">損益 ${sgn(t.pnl)}</b></div>` : ""}
       </li>`).join("");
