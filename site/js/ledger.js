@@ -2,7 +2,8 @@
    資料庫：repo 的 ledger/ledger.enc.json（以資料金鑰加密，經 GitHub API 即時讀寫）
    { v, principal, settings, trades: [{ id, code, bd, bp, bq, bf?, sd?, sp?, type?, xr?, xd? }],
      transfers: [{ id, date, kind: "in"|"out", amount, note }], ts }
-   xr＝除權（元）、xd＝除息（元），計入該筆損益
+   xr＝除權：每股配股（元，面額 10 元）→ 配股股數＝持有股數×xr÷10（例：2 元＝每張配 200 股），配股成本為 0
+   xd＝除息：實收現金股利總額（元），計入該筆損益
    每筆交易＝一批買進（可含賣出）；部分賣出時自動拆成「已賣出」與「持有中」兩筆 */
 (function () {
   "use strict";
@@ -41,14 +42,17 @@
     const st = S(), r = st.rates[typeOf(t)] || st.rates["庫存買賣"];
     const amtB = t.bp * t.bq * 1000;
     const bf = t.bf != null ? t.bf : fee(amtB, r.buy);
-    const div = (t.xr || 0) + (t.xd || 0);
-    const o = { ...t, type: typeOf(t), amtB, buyFee: bf, payable: amtB + bf, buyRebate: Math.floor(bf * st.rebate), sold: !!(t.sd && t.sp != null), div };
-    // 損益兩平價格：賣出後（扣手續費、證交稅）加上除權息剛好收回投入成本的價格
-    o.beDen = t.bq * 1000 * (1 - r.sell - r.tax);
+    const div = t.xd || 0;
+    const bonus = t.xr ? Math.floor(t.bq * 1000 * t.xr / 10 + 1e-6) : 0; // 除權配股（股）
+    const sh = t.bq * 1000 + bonus;                                      // 含配股的總股數
+    const o = { ...t, type: typeOf(t), amtB, buyFee: bf, payable: amtB + bf, buyRebate: Math.floor(bf * st.rebate), sold: !!(t.sd && t.sp != null),
+      div, bonus, sh, tq: sh / 1000 };
+    // 損益兩平價格：含配股的總股數賣出後（扣手續費、證交稅）加上除息剛好收回投入成本的價格
+    o.beDen = sh * (1 - r.sell - r.tax);
     o.beNum = o.payable - div;
     o.be = o.beDen > 0 ? o.beNum / o.beDen : null;
     if (o.sold) {
-      const amtS = t.sp * t.bq * 1000;
+      const amtS = t.sp * sh;
       o.sellFee = fee(amtS, r.sell);
       o.tax = Math.floor(amtS * r.tax);
       o.sellTotal = amtS - o.sellFee - o.tax;
@@ -59,7 +63,7 @@
       const p = priceOf(t.code);
       o.price = p;
       if (p != null) {
-        const amt = p * t.bq * 1000;
+        const amt = p * sh;
         o.mv = amt;
         o.net = amt - fee(amt, r.sell) - Math.floor(amt * r.tax);
         o.upnl = o.net - o.payable + div;
@@ -68,6 +72,7 @@
     return o;
   }
   const all = () => db.trades.map(calc);
+  const calcTq = (t) => +calc(t).tq.toFixed(3);
 
   function inPeriod(d, per = period, cus = custom) {
     if (!d) return false;
@@ -164,9 +169,9 @@
           <fieldset><legend>賣出（尚未賣出請留空日期與賣價）</legend>
             <label>賣出日期<input type="date" name="sd" value="${esc(t.sd || "")}"></label>
             <label>賣價<input type="number" name="sp" step="0.01" min="0" inputmode="decimal" value="${t.sp ?? ""}"></label>
-            <label>賣出張數<input type="number" name="sq" step="0.001" min="0.001" inputmode="decimal" value="${t.sd ? t.bq : ""}" placeholder="預設全部"><small>少於買進張數時，剩餘張數保留為持有中</small></label>
-            <label>除權（元）<input type="number" name="xr" step="1" inputmode="decimal" value="${t.xr ?? ""}" placeholder="0"><small>配股價值或配股賣出所得，計入損益</small></label>
-            <label>除息（元）<input type="number" name="xd" step="1" inputmode="decimal" value="${t.xd ?? ""}" placeholder="0"><small>實收現金股利，計入損益（持有中也可填）</small></label>
+            <label>賣出張數<input type="number" name="sq" step="0.001" min="0.001" inputmode="decimal" value="${t.sd ? calcTq(t) : ""}" placeholder="預設全部"><small>含配股；少於持有張數時，剩餘保留為持有中</small></label>
+            <label>除權（元／股）<input type="number" name="xr" step="0.0001" min="0" inputmode="decimal" value="${t.xr ?? ""}" placeholder="0"><small>股票股利，例：2 元＝每張配 200 股（持有中也可填）</small></label>
+            <label>除息（元）<input type="number" name="xd" step="1" min="0" inputmode="decimal" value="${t.xd ?? ""}" placeholder="0"><small>實收現金股利總額，計入損益（持有中也可填）</small></label>
           </fieldset>
           <label class="full">交易型態<select name="type">
             <option value="">自動（同日買賣為現股當沖）</option>
@@ -187,11 +192,13 @@
       const v = read();
       const box = el.querySelector("#lgPreview");
       if (!v.code || !v.bp || !v.bq) { box.textContent = v.code ? "" : "請輸入有效的股票代碼或股名"; return; }
-      const q = v.sd && v.sq ? Math.min(v.sq, v.bq) : v.bq, k = q / v.bq; // 部分賣出時預覽賣出部分（除權息依張數分攤）
-      const c = calc({ code: v.code, bd: v.bd, bp: v.bp, bq: q, sd: v.sd, sp: v.sp, type: v.type, xr: v.xr && Math.round(v.xr * k), xd: v.xd && Math.round(v.xd * k) });
+      const tot = v.bq * (1 + (v.xr || 0) / 10); // 含配股的持有張數
+      const k = v.sd && v.sq ? Math.min(v.sq, tot) / tot : 1; // 部分賣出時預覽賣出部分（除息依張數分攤）
+      const c = calc({ code: v.code, bd: v.bd, bp: v.bp, bq: v.bq * k, sd: v.sd, sp: v.sp, type: v.type, xr: v.xr, xd: v.xd && Math.round(v.xd * k) });
       box.innerHTML = `<b>${esc(nameOf(v.code))}</b>｜手續費(買) ${fmt(c.buyFee)}・應付 ${fmt(c.payable)}・回沖 ${fmt(c.buyRebate)}` +
-        (c.sold ? `<br>證交稅 ${fmt(c.tax)}・手續費(賣) ${fmt(c.sellFee)}・賣出總額 ${fmt(c.sellTotal)}${c.div ? `・除權息 ${fmt(c.div)}` : ""}・<span class="${cls(c.pnl)}">損益 ${sgn(c.pnl)}</span>（${c.type}）` : "") +
-        `<br>損益兩平價格 ${fmt(c.be, 2)}${!c.sold && c.div ? `（含除權息 ${fmt(c.div)}）` : ""}`;
+        (c.bonus ? `<br>除權配股 ${fmt(c.bonus)} 股，合計 ${qty(c.tq)} 張` : "") +
+        (c.sold ? `<br>證交稅 ${fmt(c.tax)}・手續費(賣) ${fmt(c.sellFee)}・賣出總額 ${fmt(c.sellTotal)}${c.div ? `・除息 ${fmt(c.div)}` : ""}・<span class="${cls(c.pnl)}">損益 ${sgn(c.pnl)}</span>（${c.type}）` : "") +
+        `<br>損益兩平價格 ${fmt(c.be, 2)}`;
     };
     f.addEventListener("input", preview);
     preview();
@@ -209,23 +216,23 @@
         if (!v.bd || !(v.bp > 0) || !(v.bq > 0)) { App.toast("請填寫買進日期、買價與張數"); return; }
         if ((v.sd || v.sp != null) && !(v.sd && v.sp > 0)) { App.toast("賣出需同時填寫日期與賣價"); return; }
         if (v.sd && v.sd < v.bd) { App.toast("賣出日期不可早於買進日期"); return; }
-        const sq = v.sd ? Math.min(v.sq || v.bq, v.bq) : null;
+        const tot = v.bq * (1 + (v.xr || 0) / 10); // 含配股的持有張數
+        const sq = v.sd ? Math.min(v.sq || tot, tot) : null;
         closeSheet(el);
         const ok = await commit((d) => {
           const base = { code: v.code, bd: v.bd, bp: v.bp, type: v.type || undefined };
-          const xr = v.xr || 0, xd = v.xd || 0;
-          const divOf = (part, whole) => ({ ...(xr ? { xr: Math.round(xr * part / whole) } : {}), ...(xd ? { xd: Math.round(xd * part / whole) } : {}) });
+          const xd = v.xd || 0;
+          if (v.xr) base.xr = v.xr; // 每股配股為比率，拆批時兩筆相同
           const list = d.trades.filter((x) => x.id !== (t && t.id));
-          if (v.sd && sq < v.bq - 1e-9) { // 部分賣出：拆成已賣出與持有中兩筆，買進手續費依張數分攤
+          if (v.sd && sq < tot - 1e-9) { // 部分賣出：拆成已賣出與持有中兩筆，買進手續費、除息依張數分攤
+            const k = sq / tot;
             const bfAll = fee(v.bp * v.bq * 1000, (S().rates[v.type || "庫存買賣"] || S().rates["庫存買賣"]).buy);
-            const soldBf = Math.round(bfAll * sq / v.bq);
-            const sold = divOf(sq, v.bq); // 除權息依張數分攤
-            list.push({ id: (t && t.id) || uid(), ...base, bq: sq, bf: soldBf, sd: v.sd, sp: v.sp, ...sold });
-            list.push({ id: uid(), ...base, bq: +(v.bq - sq).toFixed(3), bf: bfAll - soldBf,
-              ...(xr ? { xr: xr - (sold.xr || 0) } : {}), ...(xd ? { xd: xd - (sold.xd || 0) } : {}) });
+            const soldBf = Math.round(bfAll * k), soldXd = Math.round(xd * k), soldBq = +(v.bq * k).toFixed(6);
+            list.push({ id: (t && t.id) || uid(), ...base, bq: soldBq, bf: soldBf, sd: v.sd, sp: v.sp, ...(xd ? { xd: soldXd } : {}) });
+            list.push({ id: uid(), ...base, bq: +(v.bq - soldBq).toFixed(6), bf: bfAll - soldBf, ...(xd ? { xd: xd - soldXd } : {}) });
           } else {
             list.push({ id: (t && t.id) || uid(), ...base, bq: v.bq, ...(t && t.bf != null && t.bq === v.bq && t.bp === v.bp ? { bf: t.bf } : {}),
-              ...(v.sd ? { sd: v.sd, sp: v.sp } : {}), ...divOf(1, 1) });
+              ...(v.sd ? { sd: v.sd, sp: v.sp } : {}), ...(xd ? { xd } : {}) });
           }
           d.trades = list;
         }, isNew ? "帳務：新增交易" : "帳務：修改交易");
@@ -237,7 +244,7 @@
   // 由庫存賣出：依先進先出分配到各筆持有中的交易
   function sellForm(view, code) {
     const lots = all().filter((t) => !t.sold && t.code === code).sort((a, b) => (a.bd < b.bd ? -1 : 1));
-    const total = lots.reduce((s, t) => s + t.bq, 0);
+    const total = +lots.reduce((s, t) => s + t.tq, 0).toFixed(3); // 含配股
     const el = sheet(`
       <header class="sheet-head">
         <button type="button" class="sheet-btn" data-act="cancel">取消</button>
@@ -266,18 +273,16 @@
           if (left <= 1e-9) break;
           const t = d.trades.find((x) => x.id === lot.id);
           if (!t || v.sd < t.bd) continue;
-          if (t.bq <= left + 1e-9) {
-            left -= t.bq;
+          if (lot.tq <= left + 1e-9) {
+            left -= lot.tq;
             Object.assign(t, { sd: v.sd, sp, bf: lot.buyFee });
-          } else { // 拆批
-            const part = +left.toFixed(3), soldBf = Math.round(lot.buyFee * part / t.bq);
-            const sx = t.xr ? Math.round(t.xr * part / t.bq) : 0, sdv = t.xd ? Math.round(t.xd * part / t.bq) : 0;
-            const rest = { ...t, id: uid(), bq: +(t.bq - part).toFixed(3), bf: lot.buyFee - soldBf };
-            if (t.xr) rest.xr = t.xr - sx;
+          } else { // 拆批（依含配股張數比例；每股配股比率兩筆相同）
+            const k = left / lot.tq, part = +(t.bq * k).toFixed(6), soldBf = Math.round(lot.buyFee * k);
+            const sdv = t.xd ? Math.round(t.xd * k) : 0;
+            const rest = { ...t, id: uid(), bq: +(t.bq - part).toFixed(6), bf: lot.buyFee - soldBf };
             if (t.xd) rest.xd = t.xd - sdv;
             d.trades.push(rest);
             Object.assign(t, { bq: part, bf: soldBf, sd: v.sd, sp });
-            if (t.xr) t.xr = sx;
             if (t.xd) t.xd = sdv;
             left = 0;
           }
@@ -292,7 +297,7 @@
     const g = {};
     for (const t of all().filter((x) => !x.sold)) {
       const h = g[t.code] || (g[t.code] = { code: t.code, bq: 0, amtB: 0, payable: 0, mv: 0, net: 0, priced: true, rebate: 0 });
-      h.bq += t.bq; h.amtB += t.amtB; h.payable += t.payable; h.rebate += t.buyRebate;
+      h.bq += t.tq; h.amtB += t.amtB; h.payable += t.payable; h.rebate += t.buyRebate;
       if (t.mv == null) h.priced = false; else { h.mv += t.mv; h.net += t.net + t.div; }
     }
     return Object.values(g).map((h) => ({ ...h, bq: +h.bq.toFixed(3), price: priceOf(h.code), avg: h.amtB / (h.bq * 1000), upnl: h.priced ? h.net - h.payable : null }));
@@ -329,7 +334,7 @@
           <dt>帳戶總額</dt><dd><b>${fmt(totalV)}</b> 元</dd>
           <dt>交易盈虧</dt><dd><b class="${cls(gain)}">${sgn(gain)}</b> 元　<b class="${cls(gain)}">${base ? sgn(gain / base * 100, 2) : "--"}</b> %</dd>
         </dl>
-        <p class="muted small">帳戶餘額＝本金＋轉帳淨額＋已實現損益＋手續費回沖＋持股除權息－持股投入成本；帳戶總額＝帳戶餘額＋股票市值；交易盈虧以（本金＋轉帳淨額）為基準。</p>
+        <p class="muted small">帳戶餘額＝本金＋轉帳淨額＋已實現損益＋手續費回沖＋持股除息－持股投入成本；帳戶總額＝帳戶餘額＋股票市值；交易盈虧以（本金＋轉帳淨額）為基準。</p>
       </article>
       ${transferSection()}
       <details class="card lg-fold">
@@ -420,9 +425,9 @@
         <td class="stk"><b>${esc(nameOf(t.code))}</b><small>${esc(t.code)}</small></td>
         <td>${esc(t.bd)}</td><td class="num">${fmt(t.bp, 2)}</td><td class="num">${qty(t.bq)}</td>
         <td class="num">${fmt(t.buyFee)}</td><td class="num">${fmt(t.payable)}</td><td class="num">${fmt(t.buyRebate)}</td>
-        <td class="sep">${t.sold ? esc(t.sd) : "--"}</td><td class="num">${t.sold ? fmt(t.sp, 2) : "--"}</td><td class="num">${t.sold ? qty(t.bq) : "--"}</td>
+        <td class="sep">${t.sold ? esc(t.sd) : "--"}</td><td class="num">${t.sold ? fmt(t.sp, 2) : "--"}</td><td class="num">${t.sold ? qty(t.tq) : "--"}</td>
         <td class="num">${t.sold ? fmt(t.tax) : "--"}</td><td class="num">${t.sold ? fmt(t.sellFee) : "--"}</td><td class="num">${t.sold ? fmt(t.sellTotal) : "--"}</td>
-        <td class="num">${t.xr ? fmt(t.xr) : "--"}</td><td class="num">${t.xd ? fmt(t.xd) : "--"}</td>
+        <td class="num">${t.xr ? `${fmt(t.xr, 2)} 元<small>（+${fmt(t.bonus)} 股）</small>` : "--"}</td><td class="num">${t.xd ? fmt(t.xd) : "--"}</td>
         <td class="num ${cls(t.pnl)}">${t.sold ? sgn(t.pnl) : "--"}</td><td class="num">${t.sold ? fmt(t.sellRebate) : "--"}</td>
         <td>${esc(t.type)}</td><td><span class="lg-st ${t.sold ? "done" : "hold"}">${t.sold ? "已賣出" : "持有中"}</span></td>
       </tr>`).join("");
@@ -431,8 +436,8 @@
         <div class="lg-c-head"><b>${esc(nameOf(t.code))}</b><small>${esc(t.code)}・${esc(t.type)}</small><span class="lg-st ${t.sold ? "done" : "hold"}">${t.sold ? "已賣出" : "持有中"}</span></div>
         <div class="lg-c-row"><span class="muted">買</span><span>${md(t.bd)}　${fmt(t.bp, 2)} × ${qty(t.bq)} 張</span><span>應付 ${fmt(t.payable)}</span></div>
         <div class="lg-c-sub muted small">手續費 ${fmt(t.buyFee)}・回沖 ${fmt(t.buyRebate)}</div>
-        ${t.div ? `<div class="lg-c-sub muted small">${t.xr ? `除權 ${fmt(t.xr)}` : ""}${t.xr && t.xd ? "・" : ""}${t.xd ? `除息 ${fmt(t.xd)}` : ""}（計入損益）</div>` : ""}
-        ${t.sold ? `<div class="lg-c-row"><span class="muted">賣</span><span>${md(t.sd)}　${fmt(t.sp, 2)} × ${qty(t.bq)} 張</span><span>收 ${fmt(t.sellTotal)}</span></div>
+        ${t.xr || t.xd ? `<div class="lg-c-sub muted small">${t.xr ? `除權 ${fmt(t.xr, 2)} 元（配 ${fmt(t.bonus)} 股）` : ""}${t.xr && t.xd ? "・" : ""}${t.xd ? `除息 ${fmt(t.xd)}` : ""}</div>` : ""}
+        ${t.sold ? `<div class="lg-c-row"><span class="muted">賣</span><span>${md(t.sd)}　${fmt(t.sp, 2)} × ${qty(t.tq)} 張</span><span>收 ${fmt(t.sellTotal)}</span></div>
         <div class="lg-c-sub muted small">證交稅 ${fmt(t.tax)}・手續費 ${fmt(t.sellFee)}・回沖 ${fmt(t.sellRebate)}<b class="${cls(t.pnl)}">損益 ${sgn(t.pnl)}</b></div>` : ""}
       </li>`).join("");
     return `
@@ -469,7 +474,7 @@
       const g = {};
       for (const t of T.filter((x) => !x.sold && inPeriod(x.bd))) {
         const h = g[t.code] || (g[t.code] = { kind: "未實現", code: t.code, bq: 0, amtB: 0, cost: 0, net: 0, mv: 0, ok: true, beN: 0, beD: 0 });
-        h.bq += t.bq; h.amtB += t.amtB; h.cost += t.payable; rebate += t.buyRebate; h.beN += t.beNum; h.beD += t.beDen;
+        h.bq += t.tq; h.amtB += t.amtB; h.cost += t.payable; rebate += t.buyRebate; h.beN += t.beNum; h.beD += t.beDen;
         if (t.net == null) h.ok = false; else { h.net += t.net + t.div; h.mv += t.mv; }
       }
       Object.values(g).forEach((h) => rows.push({ ...h, price: priceOf(h.code), avg: h.amtB / (h.bq * 1000), pnl: h.ok ? h.net - h.cost : null, be: h.beD > 0 ? h.beN / h.beD : null }));
@@ -478,7 +483,7 @@
       const g = {};
       for (const t of T.filter((x) => x.sold && inPeriod(x.sd))) {
         const h = g[t.code] || (g[t.code] = { kind: "已實現", code: t.code, bq: 0, amtB: 0, amtS: 0, cost: 0, net: 0, mv: 0, ok: true, beN: 0, beD: 0 });
-        h.bq += t.bq; h.amtB += t.amtB; h.amtS += t.sp * t.bq * 1000; h.cost += t.payable; h.net += t.sellTotal + t.div; rebate += t.buyRebate + t.sellRebate;
+        h.bq += t.tq; h.amtB += t.amtB; h.amtS += t.sp * t.sh; h.cost += t.payable; h.net += t.sellTotal + t.div; rebate += t.buyRebate + t.sellRebate;
         h.beN += t.beNum; h.beD += t.beDen;
       }
       Object.values(g).forEach((h) => rows.push({ ...h, price: h.amtS / (h.bq * 1000), avg: h.amtB / (h.bq * 1000), pnl: h.net - h.cost, be: h.beD > 0 ? h.beN / h.beD : null }));
@@ -491,7 +496,7 @@
         .map(([k, t]) => `<button type="button" data-kind="${k}" aria-pressed="${k === pnlKind}">${t}</button>`).join("")}</div>
       <div class="seg lg-period" role="group" aria-label="查詢區間">${PER.map(([k, t]) => `<button type="button" data-period="${k}" aria-pressed="${k === period}">${t}</button>`).join("")}</div>
       ${period === "custom" ? `<div class="lg-custom"><input type="date" id="lgFrom" value="${esc(custom.from)}"> ～ <input type="date" id="lgTo" value="${esc(custom.to)}"></div>` : ""}
-      <p class="muted small note">${pnlKind === "unreal" ? "未實現損益依買進日期篩選，以最新報價估算（淨值已扣除預估賣出手續費與證交稅，並加計除權息）；損益兩平價格＝賣出後剛好收回成本的價格" : pnlKind === "real" ? "已實現損益依賣出日期篩選；市價欄為賣出均價、淨值為賣出總額" : "合併：未實現依買進日期、已實現依賣出日期篩選"}。</p>
+      <p class="muted small note">${pnlKind === "unreal" ? "未實現損益依買進日期篩選，以最新報價估算（張數含除權配股；淨值已扣除預估賣出手續費與證交稅，並加計除息）；損益兩平價格＝賣出後剛好收回成本的價格" : pnlKind === "real" ? "已實現損益依賣出日期篩選；市價欄為賣出均價、淨值為賣出總額" : "合併：未實現依買進日期、已實現依賣出日期篩選"}。</p>
       <ul class="lg-cards lg-pnl-cards">${rows.map((r) => `
         <li>
           <div class="lg-c-head"><b>${esc(nameOf(r.code))}</b><small>${esc(r.code)}${pnlKind === "all" ? "・" + r.kind : ""}</small>
