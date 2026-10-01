@@ -608,3 +608,8 @@ a.action-btn { text-decoration: none; }
 .lp.pressing, .lp.pressing td { background: var(--head) !important; transition: background .5s; }
 /* 國際股市：報價時間兩行顯示 */
 .watch-tbl td.intl-time { font-size: 11.5px; line-height: 1.25; color: var(--muted); white-space: normal; }
+
+/* 自選股：漲停／跌停成交價以方框標示 */
+.watch-tbl td.num b.lim-up, .watch-tbl td.num b.lim-dn { display: inline-block; color: #fff; padding: 1px 5px; border-radius: 4px; line-height: 1.35; }
+.watch-tbl td.num b.lim-up { background: var(--up); }
+.watch-tbl td.num b.lim-dn { background: var(--down); }

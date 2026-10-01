@@ -35,7 +35,7 @@ ANY_RE = re.compile(r"^(\d{4}|00\d{2,4}[A-Z]?)$")  # 含 ETF（月線資料）
 FIELDS = ["價格", "漲跌價", "漲跌幅", "成交張數", "成交額(百萬)", "振幅(%)",
           "5日均線", "10日均線", "20日均線", "60日均線", "100日均線",
           "MACD-快", "MACD-慢", "柱狀體(OSC)", "布林上軌", "布林中軌", "布林下軌", "布林帶寬",
-          "RSI6(日)", "RSI12(日)", "K", "D", "J", "50日均線"]
+          "RSI6(日)", "RSI12(日)", "K", "D", "J", "50日均線", "EMA13"]
 
 
 # ---------------------------------------------------------------- 抓取
@@ -200,7 +200,7 @@ def indicators(rows):
     """rows：依日期排序的 [o,h,l,c,vol,value,chg]；回傳最後兩日的欄位值（FIELDS 順序）"""
     o = [r[0] for r in rows]; h = [r[1] for r in rows]; l = [r[2] for r in rows]; c = [r[3] for r in rows]
     s5, s10, s20, s50, s60, s100 = sma(c, 5), sma(c, 10), sma(c, 20), sma(c, 50), sma(c, 60), sma(c, 100)
-    e12, e26 = ema(c, 12), ema(c, 26)
+    e12, e26, e13 = ema(c, 12), ema(c, 26), ema(c, 13)
     dif = [a - b for a, b in zip(e12, e26)]
     sig = ema(dif, 9)
     r6, r12 = rsi(c, 6), rsi(c, 12)
@@ -218,7 +218,7 @@ def indicators(rows):
         vals = [c[i], rows[i][6], (rows[i][6] / prev_c * 100) if prev_c else None, rows[i][4], rows[i][5],
                 ((h[i] - l[i]) / prev_c * 100) if prev_c else None,
                 s5[i], s10[i], s20[i], s60[i], s100[i], dif[i], sig[i], dif[i] - sig[i], up, s20[i], lo, bw,
-                r6[i], r12[i], ks[i], ds[i], js[i], s50[i]]
+                r6[i], r12[i], ks[i], ds[i], js[i], s50[i], e13[i]]
         return [None if v is None else round(v, 4 if isinstance(v, float) and abs(v) < 1 else 2) for v in vals]
 
     return at(len(rows) - 1), at(len(rows) - 2)

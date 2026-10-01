@@ -10,6 +10,20 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const priceDigits = (p) => (p == null ? 2 : p >= 1000 && p % 1 === 0 ? 0 : 2);
 
+  // 漲跌停價：前一日收盤 ±10%，依升降單位取到有效價格（漲停向下取、跌停向上取）
+  const tick = (p) => (p < 10 ? 0.01 : p < 50 ? 0.05 : p < 100 ? 0.1 : p < 500 ? 0.5 : p < 1000 ? 1 : 5);
+  function limits(prev) {
+    const snap = (raw, dir) => {
+      let p = raw;
+      for (let i = 0; i < 2; i++) { // 跨越升降單位級距時以新價位的單位再取一次
+        const t = tick(p);
+        p = (dir < 0 ? Math.floor(raw / t + 1e-9) : Math.ceil(raw / t - 1e-9)) * t;
+      }
+      return Math.round(p * 100) / 100;
+    };
+    return { up: snap(prev * 1.1, -1), dn: snap(prev * 0.9, 1) };
+  }
+
   let quotes = { rows: {} };
   let items = [];
 
@@ -41,11 +55,16 @@
     const amp = prev && high != null && low != null ? ((high - low) / prev) * 100 : null;
     const isIdx = code === "t00" || code === "o00";
     const isFut = q[1] === "fut";
+    let lim = "";
+    if (!isIdx && !isFut && prev && price != null) {
+      const L = limits(prev);
+      lim = price >= L.up - 1e-9 ? " lim-up" : price <= L.dn + 1e-9 ? " lim-dn" : "";
+    }
     const stale = date && quotes.latest && date < quotes.latest ? `<span class="stale">${+date.slice(5, 7)}/${+date.slice(8)}</span>` : "";
     // 期貨沒有個股資訊，點選直接開啟技術分析
     return `<tr${isIdx ? "" : ` class="link" data-code="${esc(code)}" data-page="${isFut ? "tech" : "stock"}" tabindex="0" role="link" aria-label="${esc(name)} ${isFut ? "技術分析" : "個股資訊"}"`}>
       <td class="stk"><b>${esc(name)}</b><small>${isIdx ? "指數" : isFut ? (code === "TXF1N" ? "期貨・夜盤" : "期貨・日盤") : esc(code)}${stale}</small></td>
-      <td class="num ${cls(chg)}"><b>${fmt(price, priceDigits(price))}</b></td>
+      <td class="num ${cls(chg)}"><b class="${lim.trim()}" ${lim ? `title="${lim.includes("up") ? "漲停" : "跌停"}"` : ""}>${fmt(price, priceDigits(price))}</b></td>
       <td class="num ${cls(chg)}">${chg > 0 ? "▲" : chg < 0 ? "▼" : ""}${chg == null ? "--" : fmt(Math.abs(chg), priceDigits(price) === 0 && chg % 1 === 0 ? 0 : 2)}</td>
       <td class="num ${cls(chg)}">${sgn(pct)}</td>
       <td class="num">${isIdx ? "--" : fmt(vol, 0)}</td>

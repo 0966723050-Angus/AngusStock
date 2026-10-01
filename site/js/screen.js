@@ -10,7 +10,7 @@
 
   // 資料庫欄位索引（與 scripts/market_db.py FIELDS 相同順序）
   const F = { p: 0, chg: 1, pct: 2, vol: 3, val: 4, amp: 5, s5: 6, s10: 7, s20: 8, s60: 9, s100: 10,
-    dif: 11, macd: 12, osc: 13, bu: 14, bm: 15, bl: 16, bw: 17, r6: 18, r12: 19, k: 20, d: 21, j: 22, s50: 23 };
+    dif: 11, macd: 12, osc: 13, bu: 14, bm: 15, bl: 16, bw: 17, r6: 18, r12: 19, k: 20, d: 21, j: 22, s50: 23, e13: 24 };
   const ok = (...v) => v.every((x) => x != null && isFinite(x));
   const spread = (a) => (ok(a.s5, a.s10, a.s20, a.s60) ? ((Math.max(a.s5, a.s10, a.s20, a.s60) - Math.min(a.s5, a.s10, a.s20, a.s60)) / Math.min(a.s5, a.s10, a.s20, a.s60)) * 100 : null);
   const tangled = (a) => { const s = spread(a); return s != null && s <= 5; };
@@ -53,6 +53,14 @@
         test: (t) => ok(t.p, t.s5) && t.p > t.s5, show: (t) => `${fmt(t.p)}／${fmt(t.s5)}`, sort: (t) => t.p / t.s5 },
       { id: "p_s10", label: "股價＞SMA10", note: "今天價格＞10 日均線",
         test: (t) => ok(t.p, t.s10) && t.p > t.s10, show: (t) => `${fmt(t.p)}／${fmt(t.s10)}`, sort: (t) => t.p / t.s10 },
+    ] },
+    { title: "EMA13", items: [
+      { id: "e13_up", label: "股價向上穿越 EMA13", note: "昨天股價≦EMA13，今天股價＞EMA13",
+        test: (t, y) => ok(t.p, t.e13, y.p, y.e13) && y.p <= y.e13 && t.p > t.e13,
+        show: (t, y) => `${fmt(y.p)} → ${fmt(t.p)}／EMA13 ${fmt(t.e13)}`, sort: (t) => (t.p / t.e13 - 1) * 100 },
+      { id: "e13_dn", label: "股價向下穿越 EMA13", note: "昨天股價≧EMA13，今天股價＜EMA13",
+        test: (t, y) => ok(t.p, t.e13, y.p, y.e13) && y.p >= y.e13 && t.p < t.e13,
+        show: (t, y) => `${fmt(y.p)} → ${fmt(t.p)}／EMA13 ${fmt(t.e13)}`, sort: (t) => (t.e13 / t.p - 1) * 100 },
     ] },
     { title: "MACD", items: [
       { id: "macd_gold", label: "黃金交叉", note: "昨天快線≦慢線，今天快線＞慢線",
