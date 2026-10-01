@@ -684,3 +684,22 @@ a.action-btn { text-decoration: none; }
 .lg-kv b { font-size: 14px; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .lg-cards li.empty { cursor: default; text-align: center; color: var(--muted); }
 .lg-sum { border-top: 0; }
+/* 帳務：費率收合、轉帳紀錄 */
+.lg-fold { margin-top: 16px; }
+.lg-fold > summary { list-style: none; cursor: pointer; padding: 12px 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.lg-fold > summary::-webkit-details-marker { display: none; }
+.lg-fold > summary::after { content: "▾"; margin-left: auto; color: var(--muted); transition: transform .2s; }
+.lg-fold[open] > summary::after { transform: rotate(180deg); }
+.lg-fold[open] > summary { border-bottom: 1px solid var(--border); }
+.lg-fold .lg-rate-more { padding-bottom: 4px; }
+.section-title .lg-tf-add { width: auto; margin-left: auto; padding: 5px 12px; font-size: 13px; }
+.lg-tf-kind, .lg-tf-period { padding: 0 0 10px; }
+.lg-tf td { text-align: center; }
+.lg-tf td.lg-note { text-align: left; color: var(--muted); max-width: 140px; white-space: normal; }
+.lg-tf-k { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; }
+.lg-tf-k.in { background: color-mix(in srgb, var(--up) 14%, transparent); color: var(--up); }
+.lg-tf-k.out { background: color-mix(in srgb, var(--down) 14%, transparent); color: var(--down); }
+.lg-tf-pick { padding: 0; gap: 8px; }
+.lg-tf-pick label { flex: 1; flex-direction: row; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 10px; color: var(--text); font-size: 15px; }
+.lg-tf-pick input { width: auto; }
+.lg-form .full { grid-column: 1 / -1; }
