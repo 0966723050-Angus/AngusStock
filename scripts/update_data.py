@@ -230,6 +230,8 @@ def fetch_mis(market: str, day: dt.date):
         m = q["msgArray"][0]
         if m.get("d") == day.strftime("%Y%m%d"):
             quote = {k: num(m.get(k)) for k in ("z", "y", "o", "h", "l")}
+            if quote["z"] is None:  # 開盤前（尚無成交）：當日報價日期已換日但沒有指數值
+                quote = None
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -548,7 +550,9 @@ def build_index_card(state, mkt, day, quote, series, unit, breadth, live_value):
         prev_close = quote["y"] or prev_close
     else:
         return None
-    closes = [idx[d][3] for d in prev_dates[-30:]] + [c]
+    if c is None:  # 尚無當日指數（開盤前），沿用先前資料
+        return None
+    closes = [x for x in [idx[d][3] for d in prev_dates[-30:]] + [c] if x is not None]
     mk = state[f"{mkt}_mkt"].get(iso, {})
     value = mk.get("val", live_value)
     ref = prev_close or c
