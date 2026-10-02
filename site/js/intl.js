@@ -65,11 +65,43 @@
           </table>
         </div>
       </article>
-      <p class="muted small note">資料來源：Yahoo Finance。每天台北時間 21:00～05:00、08:00～14:00 每半小時自動更新，或按「立即更新行情」（約 1～2 分鐘）。漲跌與前一交易日收盤比較；報價時間為台北時間。</p>`;
-    view.querySelector(".intl-update").addEventListener("click", () => {
-      if (App.isUpdating()) { App.toast("已有更新在進行中，請稍候"); return; }
-      App.runUpdate({ inputs: { intl: "refresh" } });
-    });
+      <p class="muted small note">資料來源：Yahoo Finance。開啟本頁時即時更新並每 60 秒自動刷新；網站另於每天台北時間 21:00～05:00、08:00～14:00 每半小時更新。漲跌與前一交易日收盤比較；報價時間為台北時間。</p>`;
+  }
+
+  // ------------------------------------------------------------ 即時行情（經 Google Apps Script 中轉查 Yahoo，約 1～3 秒）
+  const tpe = (sec) => new Date(sec * 1000 + 8 * 3600e3).toISOString().slice(0, 16).replace("T", " ");
+  async function liveIntl() {
+    const syms = items.filter(Boolean);
+    if (!syms.length) return;
+    const j = await App.live({ t: "yahoo", s: syms.join(",") });
+    for (const [s, r] of Object.entries(j.rows || {})) {
+      if (r.p == null) continue;
+      const old = data.rows[s];
+      const chg = r.prev != null ? +(r.p - r.prev).toFixed(4) : null;
+      data.rows[s] = [(old && old[0]) || nameOf(s) || r.name || s, r.p, chg, r.h, r.l, r.v || null, r.prev, r.time ? tpe(r.time) : null, r.cur];
+    }
+    data.updated = App.taipei() + "（即時）";
+  }
+  function paint(view) {
+    const tb = view.querySelector(".watch-tbl tbody"), meta = view.querySelector(".watch-meta .muted");
+    if (tb && items.length) tb.innerHTML = items.map(row).join("");
+    if (meta) meta.textContent = "更新時間 " + (data.updated || "--");
+  }
+  let busy = false;
+  async function refreshLive(view, manual) {
+    if (busy) return;
+    busy = true;
+    const b = view.querySelector(".intl-update");
+    if (b && manual) { b.disabled = true; b.textContent = "更新中…"; }
+    try {
+      await liveIntl();
+      if (view.isConnected) paint(view);
+    } catch (e) {
+      if (manual) App.toast(e.message || String(e));
+    } finally {
+      busy = false;
+      if (b && manual) { b.disabled = false; b.textContent = "立即更新行情"; }
+    }
   }
 
   // ------------------------------------------------------------ 編輯畫面
@@ -196,6 +228,20 @@
     });
     App.setAction(btn);
     renderTable(view, wl.syncing);
+    const hasLive = await App.hasLive();
+    view.addEventListener("click", (e) => {
+      if (!e.target.closest(".intl-update")) return;
+      if (hasLive) { refreshLive(view, true); return; }
+      if (App.isUpdating()) { App.toast("已有更新在進行中，請稍候"); return; }
+      App.runUpdate({ inputs: { intl: "refresh" } });
+    });
+    if (hasLive) {
+      refreshLive(view);
+      const timer = setInterval(() => {
+        if (!view.isConnected) { clearInterval(timer); return; }
+        if (!document.hidden) refreshLive(view);
+      }, 60000);
+    }
   }
 
   App.register({ id: "intl", title: "國際股市", icon: "🌐", render });

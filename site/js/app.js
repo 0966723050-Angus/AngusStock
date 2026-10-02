@@ -72,6 +72,45 @@
     return (await r.json()).content.sha;
   }
 
+  // ------------------------------------------------------------ 即時報價（Google Apps Script 中轉，網址加密存於 data/live.enc.json）
+  let liveCache = null;
+  async function liveCfg() {
+    if (liveCache) return liveCache;
+    try { liveCache = await loadData("live"); } catch (e) { return null; }
+    return liveCache;
+  }
+  // 證交所偶爾拒絕 Google 主機連線（約三成），失敗時自動重試
+  async function live(params, tries = 3) {
+    for (let i = 1; ; i++) {
+      try { return await liveOnce(params); } catch (e) {
+        if (i >= tries || e.message === "尚未設定即時報價服務") throw e;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+  }
+  async function liveOnce(params) {
+    const cfg = await liveCfg();
+    if (!cfg || !cfg.url) throw new Error("尚未設定即時報價服務");
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 20000);
+    try {
+      const r = await fetch(cfg.url + "?" + new URLSearchParams(params), { cache: "no-store", signal: ctl.signal });
+      if (!r.ok) throw new Error("即時報價連線失敗 (" + r.status + ")");
+      const j = await r.json();
+      if (j.error) throw new Error("即時報價：" + j.error);
+      return j;
+    } finally { clearTimeout(timer); }
+  }
+  // 台北時間（字串 YYYY-MM-DD HH:mm:ss）與台股／台指期交易時段
+  const taipei = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 19).replace("T", " ");
+  function marketOpen() {
+    const d = new Date(Date.now() + 8 * 3600e3), wd = d.getUTCDay(), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+    if (wd >= 1 && wd <= 5 && m >= 8 * 60 + 40 && m <= 13 * 60 + 50) return true;   // 日盤（含期貨 08:45 開盤）
+    if (wd >= 1 && wd <= 5 && m >= 15 * 60) return true;                          // 期貨夜盤
+    if (wd >= 2 && wd <= 6 && m <= 5 * 60 + 5) return true;                       // 夜盤跨日至 05:00
+    return false;
+  }
+
   async function unwrap(user, pwd) {
     const kw = await fetch("data/keywrap.json", { cache: "no-store" }).then((r) => {
       if (!r.ok) throw new Error("net");
@@ -348,7 +387,7 @@
   }
 
   window.App = {
-    start, register, upcoming: upcomingItem, loadData, encryptJSON, decryptJSON, repoRead, repoWrite, toast, bar,
+    start, register, upcoming: upcomingItem, loadData, encryptJSON, decryptJSON, repoRead, repoWrite, live, hasLive: async () => !!(await liveCfg()), taipei, marketOpen, toast, bar,
     runUpdate, isUpdating: () => updating,
     setAction: (el) => { const a = $("#pageAction"); a.innerHTML = ""; if (el) a.appendChild(el); }, setUpdated: (t) => { $("#drawerUpdated").textContent = t ? "資料更新：" + t : ""; } };
 })();

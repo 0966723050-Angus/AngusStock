@@ -1,14 +1,14 @@
 /* Service Worker：App 殼層快取優先，資料一律走網路 */
-const CACHE = "angus-stock-v53";
+const CACHE = "angus-stock-v54";
 const SHELL = [
   "./",
   "index.html",
   "css/style.css?v=45",
-  "js/app.js?v=13",
+  "js/app.js?v=14",
   "js/idxk.js?v=39",
   "js/home.js?v=33",
-  "js/watch.js?v=34",
-  "js/intl.js?v=1",
+  "js/watch.js?v=35",
+  "js/intl.js?v=2",
   "js/stock.js?v=29",
   "js/vprofile.js?v=22",
   "js/tech.js?v=34",
@@ -35,6 +35,8 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;
+  // 其他網站（即時報價中轉、GitHub API、證交所等）一律直接連線，不經快取
+  if (url.origin !== self.location.origin && url.hostname !== "cdn.jsdelivr.net") return;
   // 資料檔：網路優先，離線時回傳最後一次快取
   if (url.pathname.includes("/data/") || e.request.mode === "navigate") {
     e.respondWith(

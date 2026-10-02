@@ -86,7 +86,68 @@
           </table>
         </div>
       </article>
-      <p class="muted small note">點選股票可查看個股資訊。報價於開盤日 13:35、22:00 自動更新，或按「立即更新」取得最新報價；成交量單位：張。日期標示為非當日資料。</p>`;
+      <p class="muted small note">點選股票可查看個股資訊。交易時間開啟本頁會每 30 秒自動更新即時報價（證交所／期交所），也可按「立即更新報價」；成交量單位：張。日期標示為非當日資料。</p>`;
+  }
+
+  // ------------------------------------------------------------ 即時報價（經 Google Apps Script 中轉，不經 GitHub，約 1～3 秒）
+  const numv = (x) => { const v = parseFloat(String(x ?? "").replace(/,/g, "")); return isFinite(v) ? v : null; };
+  const isoOf = (d) => (d && String(d).length === 8 ? `${String(d).slice(0, 4)}-${String(d).slice(4, 6)}-${String(d).slice(6)}` : null);
+  async function liveQuotes() {
+    const ch = [], fut = [];
+    for (const c of items) {
+      if (c === "t00") ch.push("tse_t00.tw");
+      else if (c === "o00") ch.push("otc_o00.tw");
+      else if (c === "TXF1" || c === "TXF1N") fut.push(c);
+      else { const q = quotes.rows[c]; if (q && (q[1] === "tse" || q[1] === "otc")) ch.push(`${q[1]}_${c}.tw`); }
+    }
+    const jobs = [];
+    if (ch.length) jobs.push(App.live({ t: "mis", ex_ch: ch.join("|") }).then((j) => {
+      for (const m of j.rows || []) {
+        const code = m.c, old = quotes.rows[code];
+        if (!old) continue;
+        let p = numv(m.z);
+        if (p == null) p = numv(String(m.b || "").split("_")[0]); // 最近一筆未成交：以買價近似
+        const y = numv(m.y);
+        if (p == null || y == null) continue; // 開盤前尚無成交
+        const isIdx = code === "t00" || code === "o00";
+        quotes.rows[code] = [old[0], old[1], p, +(p - y).toFixed(2), numv(m.h) ?? p, numv(m.l) ?? p,
+          isIdx ? old[6] : (numv(m.v) ?? old[6]), y, isoOf(m.d) || old[8]];
+      }
+    }));
+    for (const f of fut) jobs.push(App.live({ t: "taifex", mt: f === "TXF1N" ? "1" : "0" }).then((j) => {
+      const r = (j.rows || [])[0], old = quotes.rows[f]; // 依到期排序，第一筆為近月
+      if (!r || !old) return;
+      const p = numv(r.p), chg = numv(r.chg);
+      if (p == null) return;
+      quotes.rows[f] = [old[0], old[1], p, chg, numv(r.h) ?? p, numv(r.l) ?? p, numv(r.v) ?? old[6],
+        chg == null ? old[7] : +(p - chg).toFixed(2), isoOf(r.d) || old[8]];
+    }));
+    const res = await Promise.allSettled(jobs);
+    if (res.length && res.every((x) => x.status === "rejected")) throw res[0].reason;
+    quotes.latest = Object.values(quotes.rows).reduce((m, r) => (r[8] && r[8] > m ? r[8] : m), "");
+    quotes.updated = App.taipei() + "（即時）";
+  }
+  // 只更新表格內容與時間，保留捲動位置
+  function paint(view) {
+    const tb = view.querySelector(".watch-tbl tbody"), meta = view.querySelector(".watch-meta .muted");
+    if (tb && items.length) tb.innerHTML = items.map(row).join("");
+    if (meta) meta.textContent = "報價時間 " + (quotes.updated || "--");
+  }
+  let busy = false;
+  async function refreshLive(view, manual) {
+    if (busy) return;
+    busy = true;
+    const b = view.querySelector(".watch-update");
+    if (b && manual) { b.disabled = true; b.textContent = "更新中…"; }
+    try {
+      await liveQuotes();
+      if (view.isConnected) paint(view);
+    } catch (e) {
+      if (manual) App.toast(e.message || String(e));
+    } finally {
+      busy = false;
+      if (b && manual) { b.disabled = false; b.textContent = "立即更新報價"; }
+    }
   }
 
   // ------------------------------------------------------------ 編輯畫面
@@ -238,12 +299,23 @@
     App.setAction(btn);
     renderTable(view, wl.syncing);
     const go = (tr) => { if (tr) location.hash = `#/${tr.dataset.page || "stock"}?code=` + encodeURIComponent(tr.dataset.code); };
-    // 立即更新報價：只更新自選股報價（含台指期夜盤），約 1 分鐘
-    view.querySelector(".watch-update").addEventListener("click", async () => {
+    // 立即更新報價：有即時報價服務時直接查詢（約 1～3 秒）；未設定時改由 GitHub 更新（約 1～2 分鐘）
+    const hasLive = await App.hasLive();
+    view.addEventListener("click", async (e) => {
+      if (!e.target.closest(".watch-update")) return;
+      if (hasLive) { refreshLive(view, true); return; }
       if (App.isUpdating()) { App.toast("已有更新在進行中，請稍候"); return; }
       const blob = await App.encryptJSON({ v: 1, items, ts: Date.now() });
       App.runUpdate({ inputs: { watchlist: JSON.stringify(blob) } });
     });
+    // 交易時間：開啟即更新，之後每 30 秒自動更新（離開本頁或畫面隱藏時暫停）
+    if (hasLive) {
+      if (App.marketOpen()) refreshLive(view);
+      const timer = setInterval(() => {
+        if (!view.isConnected) { clearInterval(timer); return; }
+        if (!document.hidden && App.marketOpen()) refreshLive(view);
+      }, 30000);
+    }
     view.addEventListener("click", (e) => go(e.target.closest("tr.link")));
     view.addEventListener("keydown", (e) => { if (e.key === "Enter") go(e.target.closest("tr.link")); });
   }
