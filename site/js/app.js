@@ -101,6 +101,16 @@
       return j;
     } finally { clearTimeout(timer); }
   }
+  // 台股即時報價：證交所 MIS 與 Yahoo 奇摩股市同時查詢，採用先成功回來的結果（list：["tse_2330.tw", "otc_o00.tw", ...]）
+  const toYahoo = (ch) => ch.replace(/^tse_t00\.tw$/, "^TWII").replace(/^otc_o00\.tw$/, "^TWOII")
+    .replace(/^tse_(.+)\.tw$/, "$1.TW").replace(/^otc_(.+)\.tw$/, "$1.TWO");
+  async function twQuotes(list) {
+    const ok = (p) => p.then((j) => { if (!(j.rows || []).length) throw new Error("即時報價無資料"); return j; });
+    const once = () => Promise.any([ok(live({ t: "mis", ex_ch: list.join("|") }, 1)), ok(live({ t: "tw", s: list.map(toYahoo).join(",") }, 1))]);
+    try { return await once(); } catch (e) {
+      try { return await once(); } catch (e2) { throw (e2.errors || [e2])[0]; }
+    }
+  }
   // 台北時間（字串 YYYY-MM-DD HH:mm:ss）與台股／台指期交易時段
   const taipei = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 19).replace("T", " ");
   function marketOpen() {
@@ -387,7 +397,7 @@
   }
 
   window.App = {
-    start, register, upcoming: upcomingItem, loadData, encryptJSON, decryptJSON, repoRead, repoWrite, live, hasLive: async () => !!(await liveCfg()), taipei, marketOpen, toast, bar,
+    start, register, upcoming: upcomingItem, loadData, encryptJSON, decryptJSON, repoRead, repoWrite, live, twQuotes, hasLive: async () => !!(await liveCfg()), taipei, marketOpen, toast, bar,
     runUpdate, isUpdating: () => updating,
     setAction: (el) => { const a = $("#pageAction"); a.innerHTML = ""; if (el) a.appendChild(el); }, setUpdated: (t) => { $("#drawerUpdated").textContent = t ? "資料更新：" + t : ""; } };
 })();

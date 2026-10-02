@@ -101,7 +101,7 @@
       else { const q = quotes.rows[c]; if (q && (q[1] === "tse" || q[1] === "otc")) ch.push(`${q[1]}_${c}.tw`); }
     }
     const jobs = [];
-    if (ch.length) jobs.push(App.live({ t: "mis", ex_ch: ch.join("|") }).then((j) => {
+    if (ch.length) jobs.push(App.twQuotes(ch).then((j) => {
       for (const m of j.rows || []) {
         const code = m.c, old = quotes.rows[code];
         if (!old) continue;

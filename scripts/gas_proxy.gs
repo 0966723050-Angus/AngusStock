@@ -4,6 +4,7 @@
  * 用途：網頁無法直接讀取證交所／期交所／Yahoo（瀏覽器跨網站限制），由此程式代為查詢並回傳 JSON。
  * 只允許下列三種查詢，不能當成一般用途的中轉站：
  *   ?t=mis&ex_ch=tse_2330.tw|otc_6488.tw|tse_t00.tw   證交所 MIS 即時報價（上市、上櫃、指數）
+ *   ?t=tw&s=2330.TW,6488.TWO,^TWII,^TWOII                Yahoo 奇摩股市即時報價（備援；格式同 mis）
  *   ?t=ohlc&m=TSE                                       證交所 MIS 大盤盤中每分鐘走勢（TSE＝加權、OTC＝櫃買）
  *   ?t=taifex&mt=0                                      期交所台指期即時報價（0＝日盤、1＝夜盤）
  *   ?t=yahoo&s=^DJI,^SOX,GC=F                           Yahoo Finance 國際行情
@@ -19,6 +20,7 @@ function doGet(e) {
   var out;
   try {
     if (p.t === 'mis') out = mis(p.ex_ch);
+    else if (p.t === 'tw') out = tw(p.s);
     else if (p.t === 'ohlc') out = ohlc(p.m);
     else if (p.t === 'taifex') out = taifex(p.mt);
     else if (p.t === 'yahoo') out = yahoo(p.s);
@@ -65,6 +67,31 @@ function mis(exch) {
         rows.push({ c: m.c, n: m.n, ex: m.ex, z: m.z, y: m.y, o: m.o, h: m.h, l: m.l, v: m.v, b: m.b, a: m.a, d: m.d, t: m.t });
       });
     } catch (err) { /* 略過失敗的批次 */ }
+  });
+  return { rows: rows };
+}
+
+// Yahoo 奇摩股市即時報價（證交所 MIS 連線不穩時的備援）；回傳欄位與 mis 相同（v 為張數）
+function tw(s) {
+  if (!s || !/^[\^A-Za-z0-9.,]+$/.test(s)) return { error: 'bad symbols' };
+  var syms = s.split(',').slice(0, 300), reqs = [], rows = [];
+  for (var i = 0; i < syms.length; i += 50) {
+    reqs.push({ url: 'https://tw.stock.yahoo.com/_td-stock/api/resource/StockServices.stockList;fields=avgPrice;symbols=' +
+      encodeURIComponent(syms.slice(i, i + 50).join(',')), headers: { 'User-Agent': UA }, muteHttpExceptions: true });
+  }
+  var resps;
+  try { resps = UrlFetchApp.fetchAll(reqs); } catch (err) { resps = reqs.map(fetchRetry); }
+  var raw = function (x) { return x && x.raw != null && x.raw !== '-' ? x.raw : null; };
+  resps.forEach(function (r) {
+    try {
+      JSON.parse(r.getContentText()).forEach(function (x) {
+        var code = x.symbol === '^TWII' ? 't00' : x.symbol === '^TWOII' ? 'o00' : x.systexId;
+        var t = x.regularMarketTime ? new Date(new Date(x.regularMarketTime).getTime() + 8 * 3600e3).toISOString() : '';
+        rows.push({ c: code, z: raw(x.price), y: raw(x.regularMarketPreviousClose), o: raw(x.regularMarketOpen), h: raw(x.regularMarketDayHigh),
+          l: raw(x.regularMarketDayLow), v: x.volume ? String(Math.round(Number(x.volume) / 1000)) : null,
+          d: t.slice(0, 10).replace(/-/g, ''), t: t.slice(11, 19), src: 'yahoo' });
+      });
+    } catch (err) { /* 略過 */ }
   });
   return { rows: rows };
 }

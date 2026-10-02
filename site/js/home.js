@@ -446,7 +446,7 @@
   }
   async function liveIndex(d) {
     const [q, oT, oO] = await Promise.allSettled([
-      App.live({ t: "mis", ex_ch: "tse_t00.tw|otc_o00.tw" }),
+      App.twQuotes(["tse_t00.tw", "otc_o00.tw"]),
       App.live({ t: "ohlc", m: "TSE" }, 2), App.live({ t: "ohlc", m: "OTC" }, 2)]);
     if (q.status !== "fulfilled") throw q.reason;
     let changed = false;
