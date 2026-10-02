@@ -31,7 +31,7 @@
     const chg = d.chg || [null, null];
     const rel = (a) => (a ? `<small class="${cls(a[0])}">${sgn(a[0])} / ${sgn(a[1])}%</small>` : "");
     return `
-    <article class="card">
+    <article class="card" data-card="${title}">
       <div class="card-head idx-open" role="button" tabindex="0" data-idx="${title}" title="點選查看近半年日 K 線">
         <h3>${title} ${md(d.date)}</h3><span class="idx-k-link">日K線 ›</span>
       </div>
@@ -433,13 +433,73 @@
     root.addEventListener("contextmenu", (e) => { if (e.target.closest(".lp[data-code]")) e.preventDefault(); });
   }
 
+  // ------------------------------------------------------------ 大盤即時更新（經 Google Apps Script 中轉查證交所 MIS）
+  const numv = (x) => { const v = parseFloat(String(x ?? "").replace(/,/g, "")); return isFinite(v) ? v : null; };
+  function streakOf(closes) { // 與 scripts/update_data.py index_streak 相同
+    const diffs = closes.slice(1).map((b, i) => b - closes[i]);
+    if (!diffs.length) return "";
+    const last = Math.sign(diffs[diffs.length - 1]);
+    if (!last) return "平盤";
+    let n = 0;
+    for (let i = diffs.length - 1; i >= 0 && Math.sign(diffs[i]) === last; i--) n++;
+    return n > 1 ? `連${n}${last > 0 ? "漲" : "跌"}` : `首日${last > 0 ? "上漲" : "下跌"}`;
+  }
+  async function liveIndex(d) {
+    const [q, oT, oO] = await Promise.allSettled([
+      App.live({ t: "mis", ex_ch: "tse_t00.tw|otc_o00.tw" }),
+      App.live({ t: "ohlc", m: "TSE" }, 2), App.live({ t: "ohlc", m: "OTC" }, 2)]);
+    if (q.status !== "fulfilled") throw q.reason;
+    let changed = false;
+    for (const [mkt, code, o] of [["tse", "t00", oT], ["otc", "o00", oO]]) {
+      const m = (q.value.rows || []).find((x) => x.c === code);
+      const c = m && numv(m.z), y = m && numv(m.y);
+      if (c == null || y == null) continue; // 開盤前尚無成交
+      const iso = `${m.d.slice(0, 4)}-${m.d.slice(4, 6)}-${m.d.slice(6)}`;
+      const old = d[mkt] || {};
+      const same = old.date === iso;
+      const rel = (x) => (x == null ? null : [+(x - y).toFixed(2), +((x - y) / y * 100).toFixed(2)]);
+      const hi = numv(m.h) ?? c, lo = numv(m.l) ?? c;
+      const card = { ...old, date: iso, close: c, open: numv(m.o) ?? old.open, high: hi, low: lo, prev: y,
+        chg: rel(c), high_chg: rel(hi), low_chg: rel(lo) };
+      if (!same) { // 新的交易日：連續漲跌以歷史收盤重算，尚未取得的欄位先清空
+        const hist = (d[`${mkt}_daily`] || []).filter((r) => r[0] < iso).map((r) => r[4]).slice(-30);
+        Object.assign(card, { streak: streakOf([...hist, c]), breadth: null, volume: null, count: null, value: null, series: [] });
+      }
+      const ok = o.status === "fulfilled" && String(o.value.key || "").endsWith(m.d) ? o.value : null;
+      if (ok) {
+        card.series = (ok.rows || []).map((r) => [`${r[0].slice(0, 2)}:${r[0].slice(2, 4)}`, numv(r[1]), +((numv(r[2]) || 0) / 100).toFixed(2)]);
+        card.value = numv(ok.tz) != null ? +(numv(ok.tz) / 1e8).toFixed(2) : card.value;
+        card.volume = numv(ok.tv) ?? card.volume;
+        card.count = numv(ok.tr) ?? card.count;
+        card.unit = "億";
+      }
+      d[mkt] = card;
+      changed = true;
+    }
+    if (changed) d.updated = App.taipei() + "（即時）";
+    return changed;
+  }
+  function paintIndex(view, d) {
+    for (const [title, key] of [["加權指數", "tse"], ["櫃買指數", "otc"]]) {
+      const el = view.querySelector(`[data-card="${title}"]`);
+      if (!el || !d[key]) continue;
+      const old = el.querySelector(".chart");
+      const inst = old && echarts.getInstanceByDom(old);
+      if (inst) inst.dispose();
+      el.outerHTML = indexCard(title, d[key]);
+      drawIndexChart(view.querySelector(`[data-chart="${title}"]`), d[key]);
+    }
+    const t = view.querySelector(".idx-updated");
+    if (t) t.textContent = "更新時間 " + (d.updated || "--");
+  }
+
   // ------------------------------------------------------------ 頁面
   async function render(view) {
     disposeCharts();
     const d = await App.loadData("home");
     App.setUpdated(d.updated);
     view.innerHTML = `
-      <div class="section-title"><h2>大盤指數</h2><span class="muted small">更新時間 ${d.updated || "--"}</span></div>
+      <div class="section-title"><h2>大盤指數</h2><span class="muted small idx-updated">更新時間 ${d.updated || "--"}</span></div>
       <div class="grid-2 stack">
         ${indexCard("加權指數", d.tse)}
         ${indexCard("櫃買指數", d.otc)}
@@ -469,6 +529,17 @@
     view.addEventListener("keydown", (e) => { if (e.key === "Enter") openK(e.target.closest(".idx-open")); });
     drawIndexChart(view.querySelector('[data-chart="加權指數"]'), d.tse || {});
     drawIndexChart(view.querySelector('[data-chart="櫃買指數"]'), d.otc || {});
+    // 交易時間：開啟即以即時資料更新大盤，之後每 30 秒更新（離開本頁或畫面隱藏時暫停）
+    if (await App.hasLive()) {
+      let busy = false;
+      const tick = async (first) => {
+        if (busy || !view.isConnected || (!first && document.hidden) || !App.marketOpen()) return;
+        busy = true;
+        try { if (await liveIndex(d) && view.isConnected) paintIndex(view, d); } catch (e) { /* 下次再試 */ } finally { busy = false; }
+      };
+      tick(true);
+      const timer = setInterval(() => { if (!view.isConnected) clearInterval(timer); else tick(); }, 30000);
+    }
     drawMarginChart(view.querySelector('[data-margin="tse"]'), d.margin_tse, view.querySelector('[data-mg="tse"]'));
     drawMarginChart(view.querySelector('[data-margin="otc"]'), d.margin_otc, view.querySelector('[data-mg="otc"]'));
     drawInstChart(view.querySelector('[data-inst="tse"]'), d.inst_tse);
@@ -486,7 +557,7 @@
     });
   }
 
-  window.addEventListener("resize", () => charts.forEach((c) => c.resize()));
+  window.addEventListener("resize", () => charts.forEach((c) => { if (!c.isDisposed()) c.resize(); }));
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     if (location.hash === "" || location.hash.startsWith("#/home")) window.dispatchEvent(new HashChangeEvent("hashchange"));
   });

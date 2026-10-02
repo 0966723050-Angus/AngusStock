@@ -503,7 +503,11 @@
         .map(([k, t]) => `<button type="button" data-kind="${k}" aria-pressed="${k === pnlKind}">${t}</button>`).join("")}</div>
       <div class="seg lg-period" role="group" aria-label="查詢區間">${PER.map(([k, t]) => `<button type="button" data-period="${k}" aria-pressed="${k === period}">${t}</button>`).join("")}</div>
       ${period === "custom" ? `<div class="lg-custom"><input type="date" id="lgFrom" value="${esc(custom.from)}"> ～ <input type="date" id="lgTo" value="${esc(custom.to)}"></div>` : ""}
-      <p class="muted small note">${pnlKind === "unreal" ? "未實現損益依買進日期篩選，以最新報價估算（張數含除權配股；淨值已扣除預估賣出手續費與證交稅，並加計除息）；損益兩平價格＝賣出後剛好收回成本的價格" : pnlKind === "real" ? "已實現損益依賣出日期篩選；市價欄為賣出均價、淨值為賣出總額" : "合併：未實現依買進日期、已實現依賣出日期篩選"}。</p>
+      <article class="card lg-sum-top"><div class="lg-sum">
+        <span>總市值：<b>${fmt(sum("mv"))}</b></span>
+        <span>投資損益：<b class="${cls(totalPnl)}">${sgn(totalPnl)}</b>${totalCost ? `（<span class="${cls(totalPnl)}">${sgn(totalPnl / totalCost * 100, 2)}%</span>）` : ""}</span>
+        <span>手續費回沖：<b>${fmt(rebate)}</b></span>
+      </div></article>
       <ul class="lg-cards lg-pnl-cards">${rows.map((r) => `
         <li>
           <div class="lg-c-head"><b>${esc(nameOf(r.code))}</b><small>${esc(r.code)}${pnlKind === "all" ? "・" + r.kind : ""}</small>
@@ -519,11 +523,7 @@
           <td class="num">${fmt(r.cost)}</td><td class="num ${cls(r.pnl)}"><b>${sgn(r.pnl)}</b></td><td class="num">${fmt(r.ok === false ? null : r.net)}</td>
           <td class="num ${cls(r.pnl)}">${r.pnl == null ? "--" : sgn(r.pnl / r.cost * 100, 2)}</td><td class="num">${fmt(r.be, 2)}</td></tr>`).join("") || '<tr><td colspan="9" class="empty">此區間沒有資料</td></tr>'}</tbody>
       </table></div></article>
-      <article class="card"><div class="lg-sum">
-        <span>總市值：<b>${fmt(sum("mv"))}</b></span>
-        <span>投資損益：<b class="${cls(totalPnl)}">${sgn(totalPnl)}</b>${totalCost ? `（<span class="${cls(totalPnl)}">${sgn(totalPnl / totalCost * 100, 2)}%</span>）` : ""}</span>
-        <span>手續費回沖：<b>${fmt(rebate)}</b></span>
-      </div></article>`;
+      <p class="muted small note">${pnlKind === "unreal" ? "未實現損益依買進日期篩選，以最新報價估算（張數含除權配股；淨值已扣除預估賣出手續費與證交稅，並加計除息）；損益兩平價格＝賣出後剛好收回成本的價格" : pnlKind === "real" ? "已實現損益依賣出日期篩選；市價欄為賣出均價、淨值為賣出總額" : "合併：未實現依買進日期、已實現依賣出日期篩選"}。</p>`;
   }
 
   // ------------------------------------------------------------ 頁面

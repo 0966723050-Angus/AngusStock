@@ -711,3 +711,4 @@ a.action-btn { text-decoration: none; }
 .lg-tf-bar { display: flex; justify-content: flex-end; padding-bottom: 10px; }
 .lg-tf-bar .lg-tf-add { width: auto; padding: 8px 16px; font-size: 14px; }
 .lg-fold .lg-sum { margin: 0 -14px; }
+.lg-sum-top { margin-bottom: 10px; }

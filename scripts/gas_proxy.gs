@@ -4,11 +4,13 @@
  * 用途：網頁無法直接讀取證交所／期交所／Yahoo（瀏覽器跨網站限制），由此程式代為查詢並回傳 JSON。
  * 只允許下列三種查詢，不能當成一般用途的中轉站：
  *   ?t=mis&ex_ch=tse_2330.tw|otc_6488.tw|tse_t00.tw   證交所 MIS 即時報價（上市、上櫃、指數）
+ *   ?t=ohlc&m=TSE                                       證交所 MIS 大盤盤中每分鐘走勢（TSE＝加權、OTC＝櫃買）
  *   ?t=taifex&mt=0                                      期交所台指期即時報價（0＝日盤、1＝夜盤）
  *   ?t=yahoo&s=^DJI,^SOX,GC=F                           Yahoo Finance 國際行情
  *
  * 部署：script.google.com → 新專案 → 貼上本檔 → 部署 → 新增部署作業 → 類型「網頁應用程式」
  *       執行身分：我　／　誰可以存取：所有人 → 部署 → 複製「網頁應用程式網址」
+ * 更新程式：貼上新版後 → 部署 → 管理部署作業 → 編輯（鉛筆）→ 版本選「新版本」→ 部署（網址不變）
  */
 var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128 Safari/537.36';
 
@@ -17,6 +19,7 @@ function doGet(e) {
   var out;
   try {
     if (p.t === 'mis') out = mis(p.ex_ch);
+    else if (p.t === 'ohlc') out = ohlc(p.m);
     else if (p.t === 'taifex') out = taifex(p.mt);
     else if (p.t === 'yahoo') out = yahoo(p.s);
     else out = { error: 'unknown type' };
@@ -25,6 +28,23 @@ function doGet(e) {
   }
   out.ts = Date.now();
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 連線失敗（證交所偶爾拒絕 Google 主機）時重試，最多 4 次
+function fetchRetry(req) {
+  for (var i = 0; i < 4; i++) {
+    try { return UrlFetchApp.fetch(req.url, { headers: req.headers, muteHttpExceptions: true }); }
+    catch (err) { if (i === 3) throw err; Utilities.sleep(250); }
+  }
+}
+
+// 證交所 MIS 大盤每分鐘走勢：c＝指數、s＝該分鐘成交金額（百萬元）；staticObj：tz 成交金額（元）、tv 成交量（張）、tr 成交筆數
+function ohlc(m) {
+  var mk = m === 'OTC' ? 'OTC' : 'TSE';
+  var r = fetchRetry({ url: 'https://mis.twse.com.tw/stock/data/mis_ohlc_' + mk + '.txt', headers: { 'User-Agent': UA }, muteHttpExceptions: true });
+  var j = JSON.parse(r.getContentText()), st = j.staticObj || {};
+  return { key: st.key, tz: st.tz, tv: st.tv, tr: st.tr,
+    rows: (j.ohlcArray || []).map(function (a) { return [a.ts, a.c, a.s]; }) };
 }
 
 // 證交所 MIS：每次最多 50 檔，多批同時查詢
@@ -37,8 +57,9 @@ function mis(exch) {
       headers: { 'User-Agent': UA, Referer: 'https://mis.twse.com.tw/stock/index.jsp' }, muteHttpExceptions: true,
     });
   }
-  var rows = [];
-  UrlFetchApp.fetchAll(reqs).forEach(function (r) {
+  var rows = [], resps;
+  try { resps = UrlFetchApp.fetchAll(reqs); } catch (err) { resps = reqs.map(fetchRetry); } // 同時查詢失敗時逐批重試
+  resps.forEach(function (r) {
     try {
       (JSON.parse(r.getContentText()).msgArray || []).forEach(function (m) {
         rows.push({ c: m.c, n: m.n, ex: m.ex, z: m.z, y: m.y, o: m.o, h: m.h, l: m.l, v: m.v, b: m.b, a: m.a, d: m.d, t: m.t });
