@@ -134,20 +134,29 @@
     return toB64(raw);
   }
 
-  // 資料讀取：每次向伺服器確認是否有新版（未變更時回 304，幾乎不耗時），
-  // 同一版本解密後的結果保留在記憶體，切換頁面時不必重新下載與解密
+  // 資料讀取：先取得部署時產生的版本清單（data/manifest.json，每次都向伺服器取最新），
+  // 再以「檔名?v=版本」讀取資料檔：版本相同沿用記憶體中的資料，版本不同的網址必定是新檔，不會拿到 CDN 的舊資料
   const memo = new Map();
+  let man = null, manAt = 0;
+  async function manifest() {
+    if (man && Date.now() - manAt < 15000) return man;
+    try {
+      const r = await fetch(`data/manifest.json?t=${Date.now()}`, { cache: "no-store" });
+      if (r.ok) { man = (await r.json()).files || {}; manAt = Date.now(); }
+    } catch (e) { /* 離線時沿用 */ }
+    return man || {};
+  }
   async function loadData(name) {
-    const r = await fetch(`data/${name}.enc.json`, { cache: "no-cache" });
-    if (!r.ok) throw new Error("資料讀取失敗 (" + r.status + ")");
-    const tag = r.headers.get("ETag") || r.headers.get("Last-Modified");
+    const v = (await manifest())[name];
     const hit = memo.get(name);
-    if (tag && hit && hit.tag === tag && hit.key === dataKey) return hit.data;
+    if (v && hit && hit.v === v && hit.key === dataKey) return hit.data;
+    const r = await fetch(`data/${name}.enc.json?` + (v ? `v=${v}` : `t=${Date.now()}`), { cache: v ? "default" : "no-store" });
+    if (!r.ok) throw new Error("資料讀取失敗 (" + r.status + ")");
     const blob = await r.json();
     let pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(blob.iv) }, dataKey, b64(blob.ct));
     if (blob.z === "gzip") pt = await new Response(new Blob([pt]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
     const data = JSON.parse(new TextDecoder().decode(pt));
-    if (tag) memo.set(name, { tag, key: dataKey, data });
+    if (v) memo.set(name, { v, key: dataKey, data });
     return data;
   }
 
@@ -305,6 +314,7 @@
       await watchRun(cfg, since);
       bar("更新完成，重新載入資料…", "ok");
       await new Promise((r) => setTimeout(r, 4000)); // 等待 Pages CDN 生效
+      man = null; // 重新取得版本清單
       await route();
       bar("資料已更新完成", "ok");
       setTimeout(() => bar(""), 4000);
@@ -380,6 +390,14 @@
       if (confirm("要立即向交易所抓取最新資料並更新網站嗎？\n（約需 1～3 分鐘）")) runUpdate();
     });
     window.addEventListener("hashchange", () => { if (dataKey) route(); });
+    // 主畫面 App 由背景回到前景（超過 3 分鐘）或由瀏覽器快取還原頁面時，重新載入目前頁面的資料
+    let hiddenAt = 0;
+    const reload = () => { if (dataKey && !updating && !document.querySelector(".sheet")) { man = null; route(); } };
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) hiddenAt = Date.now();
+      else if (hiddenAt && Date.now() - hiddenAt > 180000) reload();
+    });
+    window.addEventListener("pageshow", (e) => { if (e.persisted) reload(); });
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js").catch(() => {});

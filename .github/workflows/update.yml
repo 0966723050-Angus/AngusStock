@@ -34,6 +34,14 @@ on:
         description: "自選股清單（網頁加密後傳入，勿手動填寫）"
         type: string
         default: ""
+      scheduled:
+        description: "排程觸發（Google Apps Script 定時呼叫）：檢查開盤日並避免同時段重複更新"
+        type: boolean
+        default: false
+      fund_only:
+        description: "只更新個股基本面快取"
+        type: boolean
+        default: false
       intl:
         description: "國際股市：refresh＝只更新行情，或網頁加密後的清單（勿手動填寫）"
         type: string
@@ -91,9 +99,9 @@ jobs:
           PYTHONUNBUFFERED: "1"
           DATA_KEY: ${{ secrets.DATA_KEY }}
           WATCHLIST_BLOB: ${{ inputs.watchlist }}
-          SCHEDULED: ${{ github.event_name == 'schedule' }}
+          SCHEDULED: ${{ github.event_name == 'schedule' || inputs.scheduled }}
         run: |
-          if [ "${{ github.event.schedule }}" = "30 13 * * 1-5" ]; then
+          if [ "${{ github.event.schedule }}" = "30 13 * * 1-5" ] || [ "${{ inputs.fund_only }}" = "true" ]; then
             python scripts/update_data.py --fund-only
           elif [ -n "$WATCHLIST_BLOB" ]; then
             python scripts/update_data.py --watch-only
@@ -154,6 +162,17 @@ jobs:
         env:
           DATA_KEY: ${{ secrets.DATA_KEY }}
         run: python scripts/market_db.py --build
+      - name: 產生資料版本清單（網頁依版本讀取，避免 CDN 回傳舊資料）
+        run: |
+          python - <<'PY'
+          import hashlib, json, time
+          from pathlib import Path
+          d = Path("site/data")
+          files = {f.name[:-len(".enc.json")]: hashlib.sha1(f.read_bytes()).hexdigest()[:12]
+                   for f in sorted(d.glob("*.enc.json"))}
+          (d / "manifest.json").write_text(json.dumps({"built": int(time.time()), "files": files}), "utf-8")
+          print(len(files), "files")
+          PY
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

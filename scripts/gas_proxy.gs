@@ -2,7 +2,7 @@
  * AngusStock 即時報價中轉（Google Apps Script 網頁應用程式）
  *
  * 用途：網頁無法直接讀取證交所／期交所／Yahoo（瀏覽器跨網站限制），由此程式代為查詢並回傳 JSON。
- * 只允許下列三種查詢，不能當成一般用途的中轉站：
+ * 只允許下列查詢，不能當成一般用途的中轉站（另含定時觸發 GitHub 更新，見檔案最後）：
  *   ?t=mis&ex_ch=tse_2330.tw|otc_6488.tw|tse_t00.tw   證交所 MIS 即時報價（上市、上櫃、指數）
  *   ?t=tw&s=2330.TW,6488.TWO,^TWII,^TWOII                Yahoo 奇摩股市即時報價（備援；格式同 mis）
  *   ?t=ohlc&m=TSE                                       證交所 MIS 大盤盤中每分鐘走勢（TSE＝加權、OTC＝櫃買）
@@ -126,4 +126,65 @@ function yahoo(s) {
     } catch (err) { /* 略過 */ }
   });
   return { rows: rows };
+}
+
+// ================================================================ 定時觸發 GitHub 更新
+// GitHub 內建排程常延遲或整段略過，改由 Apps Script 計時器每 10 分鐘檢查一次，到時段就呼叫 GitHub 執行更新。
+// 設定：專案設定（齒輪）→ 指令碼屬性 → 新增 GITHUB_TOKEN（權杖需 AngusStock 的 Actions：讀寫）
+//       然後在編輯器上方選擇函式 installTriggers → 執行（只需一次）
+var REPO = '0966723050-Angus/AngusStock';
+// 台北時間（週一～五）：時段開始後 10 分鐘內觸發一次；網站端另會檢查是否為開盤日、同時段是否已更新
+var SLOTS = [
+  { at: '13:40', inputs: { scheduled: 'true' } },  // 盤後暫定資料
+  { at: '14:20', inputs: { scheduled: 'true' } },  // 備援（已更新則自動略過）
+  { at: '21:30', inputs: { fund_only: 'true' } },  // 個股基本面
+  { at: '22:00', inputs: { scheduled: 'true' } },  // 官方收盤資料
+  { at: '22:40', inputs: { scheduled: 'true' } },  // 備援
+];
+
+function scheduledTick() {
+  var now = new Date();
+  var wd = Number(Utilities.formatDate(now, 'Asia/Taipei', 'u')); // 1＝週一 … 7＝週日
+  if (wd > 5) return;
+  var day = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd');
+  var mins = Number(Utilities.formatDate(now, 'Asia/Taipei', 'H')) * 60 + Number(Utilities.formatDate(now, 'Asia/Taipei', 'm'));
+  var props = PropertiesService.getScriptProperties();
+  Object.keys(props.getProperties()).forEach(function (k) { // 清除前幾天的觸發紀錄
+    if (k.indexOf('done_') === 0 && k.indexOf('done_' + day) !== 0) props.deleteProperty(k);
+  });
+  SLOTS.forEach(function (s) {
+    var p = s.at.split(':'), start = Number(p[0]) * 60 + Number(p[1]);
+    var key = 'done_' + day + '_' + s.at;
+    if (mins >= start && mins < start + 10 && !props.getProperty(key)) {
+      if (dispatch_(s.inputs)) props.setProperty(key, '1');
+    }
+  });
+}
+
+function dispatch_(inputs) {
+  var token = PropertiesService.getScriptProperties().getProperty('GITHUB_TOKEN');
+  if (!token) throw new Error('尚未設定指令碼屬性 GITHUB_TOKEN');
+  var r = UrlFetchApp.fetch('https://api.github.com/repos/' + REPO + '/actions/workflows/update.yml/dispatches', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+    payload: JSON.stringify({ ref: 'main', inputs: inputs }),
+  });
+  if (r.getResponseCode() !== 204) console.error('GitHub 觸發失敗 ' + r.getResponseCode() + ' ' + r.getContentText());
+  return r.getResponseCode() === 204;
+}
+
+// 執行一次：建立每 10 分鐘的計時器，並清除舊的同名計時器與過期紀錄
+function installTriggers() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'scheduledTick') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('scheduledTick').timeBased().everyMinutes(10).create();
+  var props = PropertiesService.getScriptProperties(), all = props.getProperties();
+  Object.keys(all).forEach(function (k) { if (k.indexOf('done_') === 0) props.deleteProperty(k); });
+  console.log('已建立計時器：每 10 分鐘檢查一次');
+}
+
+// 測試用：立即觸發一次一般更新（會檢查是否為開盤日）
+function testDispatch() {
+  console.log(dispatch_({ scheduled: 'true' }) ? '觸發成功，請到 GitHub Actions 查看' : '觸發失敗，請檢查 GITHUB_TOKEN');
 }
