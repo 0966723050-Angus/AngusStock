@@ -654,6 +654,17 @@ def update_watch(key, blob_text=None, full=False):
     if WATCH_FILE.exists():
         items = decrypt_json(json.loads(WATCH_FILE.read_text("utf-8")), key).get("items") or DEFAULT_WATCH
     rows = fetch_all_quotes()
+    # 來源網站暫時故障（例如櫃買中心回 520）時，沿用上次的報價，避免整個市場的股票變成「查無資料」
+    if QUOTES_FILE.exists():
+        try:
+            old = decrypt_json(json.loads(QUOTES_FILE.read_text("utf-8")), key).get("rows", {})
+            kept = [c for c in old if c not in rows]
+            for c in kept:
+                rows[c] = old[c]
+            if kept:
+                print(f"  ! 本次未取得 {len(kept)} 檔報價（來源暫時無法連線），沿用上次資料")
+        except Exception as e:  # noqa: BLE001
+            print("  ! 讀取上次報價失敗：", e)
     polite()
     live = fetch_mis_quotes(items, {c: v[1] for c, v in rows.items()})
     rows.update(live)
