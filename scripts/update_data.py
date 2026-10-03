@@ -800,7 +800,16 @@ def main():
     for k in ("tse_inst", "otc_inst", "tse_margin", "otc_margin"):
         prune(state.setdefault(k, {}), HISTORY_DAYS + 20)
 
-    if scheduled:
+    # 晚間時段需官方盤後資料（法人、融資券、指數；上市與上櫃）都已取得才算完成；
+    # 若來源暫時故障或尚未公布，不標記完成，讓後續備援時段（22:40 等）自動補抓缺少的日期
+    missing = []
+    if slot.endswith("PM") and is_trading_day(day):
+        iso = day.isoformat()
+        missing = [k for k in ("tse_inst", "otc_inst", "tse_margin", "otc_margin", "tse_idx", "otc_idx")
+                   if iso not in state.get(k, {})]
+        if missing:
+            print(f"  ! {iso} 資料尚未齊全：{', '.join(missing)}，此時段不標記完成，由備援時段補抓")
+    if scheduled and not missing:
         state["done_slots"] = (state.get("done_slots", []) + [slot])[-20:]
     save_json(STATE_FILE, encrypt_json(state, key))
     save_json(OUT_FILE, encrypt_json(home, key))
