@@ -24,6 +24,101 @@
     try { sessionStorage.removeItem(KEY_STORE); localStorage.removeItem(KEY_STORE); } catch (e) { /* ignore */ }
   }
 
+  // ------------------------------------------------------------ Face ID 解鎖（WebAuthn 平台驗證器）
+  // localStorage "angus.bio"：{ id: 憑證 ID, salt, wrapped?: { iv, ct } }
+  //   支援 PRF（iOS 18 以上）時，資料金鑰以 Face ID 驗證後才能取得的金鑰加密保存（wrapped），裝置上不留明文金鑰；
+  //   不支援 PRF 時，僅以 Face ID 驗證作為開啟門檻（金鑰仍保存在本機）。
+  const BIO_STORE = "angus.bio";
+  const LOCK_AFTER = 60000; // App 在背景超過 1 分鐘，回到前景時重新鎖定
+  const bioGet = () => { try { return JSON.parse(localStorage.getItem(BIO_STORE) || "null"); } catch (e) { return null; } };
+  const bioSet = (v) => { try { v ? localStorage.setItem(BIO_STORE, JSON.stringify(v)) : localStorage.removeItem(BIO_STORE); } catch (e) { /* ignore */ } };
+  const rnd = (n) => crypto.getRandomValues(new Uint8Array(n));
+  async function bioAvailable() {
+    try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch (e) { return false; }
+  }
+  async function bioAssert(bio) {
+    const cred = await navigator.credentials.get({ publicKey: {
+      challenge: rnd(32), rpId: location.hostname, userVerification: "required", timeout: 60000,
+      allowCredentials: [{ type: "public-key", id: b64(bio.id) }],
+      extensions: { prf: { eval: { first: b64(bio.salt) } } } } });
+    const prf = cred.getClientExtensionResults().prf;
+    return prf && prf.results && prf.results.first ? prf.results.first : null;
+  }
+  const prfKey = (out) => crypto.subtle.importKey("raw", out, "AES-GCM", false, ["encrypt", "decrypt"]);
+  async function bioEnable() {
+    const salt = rnd(32);
+    const cred = await navigator.credentials.create({ publicKey: {
+      rp: { name: "Angus 股市", id: location.hostname },
+      user: { id: rnd(16), name: "angus-stock", displayName: "Angus 股市" },
+      challenge: rnd(32), timeout: 60000,
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+      extensions: { prf: { eval: { first: salt } } } } });
+    const bio = { id: toB64(cred.rawId), salt: toB64(salt) };
+    const ext = cred.getClientExtensionResults().prf || {};
+    let out = ext.results && ext.results.first;
+    if (!out && ext.enabled) { try { out = await bioAssert(bio); } catch (e) { out = null; } } // 部分系統建立時不回傳 PRF，需再驗證一次
+    if (out && rawKeyB64) {
+      const iv = rnd(12);
+      const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await prfKey(out), new TextEncoder().encode(rawKeyB64));
+      bio.wrapped = { iv: toB64(iv), ct: toB64(ct) };
+      storeClear(); // 不再保存明文金鑰
+    } else if (rawKeyB64) {
+      storeSet(rawKeyB64, true);
+    }
+    bioSet(bio);
+    return !!bio.wrapped;
+  }
+  function bioDisable() {
+    if (rawKeyB64) storeSet(rawKeyB64, true);
+    bioSet(null);
+  }
+  function showLock(msg) {
+    $("#app").hidden = true;
+    $("#login").hidden = true;
+    $("#lock").hidden = false;
+    $("#lockMsg").textContent = msg || "";
+  }
+  let unlocking = false;
+  async function unlock(auto) {
+    const bio = bioGet();
+    if (!bio || unlocking) return;
+    unlocking = true;
+    $("#unlockBtn").disabled = true;
+    $("#lockMsg").textContent = "";
+    try {
+      const out = await bioAssert(bio);
+      let raw = null;
+      if (bio.wrapped) {
+        if (!out) throw new Error("此裝置無法取得 Face ID 金鑰，請改用帳號密碼登入");
+        const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(bio.wrapped.iv) }, await prfKey(out), b64(bio.wrapped.ct));
+        raw = new TextDecoder().decode(pt);
+      } else {
+        raw = storeGet();
+      }
+      if (!raw) throw new Error("登入資料已失效，請改用帳號密碼登入");
+      rawKeyB64 = raw;
+      dataKey = await importDataKey(raw);
+      $("#lock").hidden = true;
+      if (!$("#view").children.length || !current) await enterApp();
+      else { $("#app").hidden = false; route(); }
+    } catch (e) {
+      // 自動啟動時若系統要求點按（NotAllowedError）就不顯示錯誤，等待使用者按「以 Face ID 解鎖」
+      if (!(auto && e && e.name === "NotAllowedError")) {
+        $("#lockMsg").textContent = e && e.name === "NotAllowedError" ? "未完成 Face ID 驗證，請再試一次" : (e.message || "解鎖失敗");
+      }
+    } finally {
+      unlocking = false;
+      $("#unlockBtn").disabled = false;
+    }
+  }
+  async function refreshBioBtn() {
+    const btn = $("#bioBtn");
+    if (!(await bioAvailable())) { btn.hidden = true; return; }
+    btn.hidden = false;
+    btn.textContent = bioGet() ? "關閉 Face ID 解鎖" : "啟用 Face ID 解鎖";
+  }
+
   let dataKey = null;   // CryptoKey
   let rawKeyB64 = null;
 
@@ -333,6 +428,7 @@
   // ------------------------------------------------------------ 啟動
   function showLogin(msg) {
     $("#app").hidden = true;
+    $("#lock").hidden = true;
     $("#login").hidden = false;
     $("#loginMsg").textContent = msg || "";
     $("#loginUser").focus();
@@ -340,6 +436,8 @@
 
   async function enterApp() {
     $("#login").hidden = true;
+    $("#lock").hidden = true;
+    refreshBioBtn();
     $("#app").hidden = false;
     await route();
     prefetch();
@@ -359,9 +457,11 @@
       const norm = (v) => v.normalize("NFKC").trim();
       rawKeyB64 = await unwrap(norm($("#loginUser").value), norm($("#loginPwd").value));
       dataKey = await importDataKey(rawKeyB64);
-      storeSet(rawKeyB64, $("#loginRemember").checked);
+      const bio = bioGet();
+      if (!(bio && bio.wrapped)) storeSet(rawKeyB64, $("#loginRemember").checked); // Face ID 加密保存時不另存明文金鑰
       $("#loginPwd").value = "";
       await enterApp();
+      if (!bioGet() && await bioAvailable()) toast("可在選單中「啟用 Face ID 解鎖」");
     } catch (err) {
       $("#loginMsg").textContent = err.message === "net" ? "無法連線，請稍後再試" : "帳號或密碼錯誤";
     } finally {
@@ -377,8 +477,25 @@
     $("#scrim").addEventListener("click", () => openMenu(false));
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") openMenu(false); });
     $("#logoutBtn").addEventListener("click", () => {
-      storeClear(); dataKey = null; openMenu(false); showLogin("已登出");
+      storeClear(); bioSet(null); dataKey = null; rawKeyB64 = null; openMenu(false); showLogin("已登出");
     });
+    $("#bioBtn").addEventListener("click", async () => {
+      if (bioGet()) {
+        if (!confirm("要關閉 Face ID 解鎖嗎？\n關閉後開啟 App 不再需要驗證。")) return;
+        bioDisable();
+        toast("已關閉 Face ID 解鎖");
+      } else {
+        try {
+          const strong = await bioEnable();
+          toast(strong ? "已啟用 Face ID 解鎖（金鑰已加密保存）" : "已啟用 Face ID 解鎖");
+        } catch (e) {
+          toast(e && e.name === "NotAllowedError" ? "已取消啟用" : "無法啟用 Face ID：" + (e.message || e));
+        }
+      }
+      refreshBioBtn();
+    });
+    $("#unlockBtn").addEventListener("click", () => unlock(false));
+    $("#lockPwdBtn").addEventListener("click", () => { $("#lock").hidden = true; showLogin(); });
     $("#refreshBtn").addEventListener("click", async () => {
       const b = $("#refreshBtn");
       b.classList.add("spin");
@@ -394,8 +511,17 @@
     let hiddenAt = 0;
     const reload = () => { if (dataKey && !updating && !document.querySelector(".sheet")) { man = null; route(); } };
     document.addEventListener("visibilitychange", () => {
-      if (document.hidden) hiddenAt = Date.now();
-      else if (hiddenAt && Date.now() - hiddenAt > 180000) reload();
+      // 已啟用 Face ID：進入背景時遮住畫面，App 切換器的預覽不會顯示資料
+      if (document.hidden) { hiddenAt = Date.now(); if (bioGet()) document.body.classList.add("privacy"); return; }
+      document.body.classList.remove("privacy");
+      const away = hiddenAt ? Date.now() - hiddenAt : 0;
+      // 已啟用 Face ID：在背景超過 1 分鐘就重新鎖定（清除記憶體中的金鑰與資料）
+      if (bioGet() && dataKey && away > LOCK_AFTER && !updating) {
+        dataKey = null; rawKeyB64 = null; memo.clear(); man = null;
+        showLock();
+        return;
+      }
+      if (away > 180000) reload();
     });
     window.addEventListener("pageshow", (e) => { if (e.persisted) reload(); });
 
@@ -403,9 +529,12 @@
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
 
+    refreshBioBtn();
+    if (bioGet()) { showLock(); unlock(true); return; } // 已啟用 Face ID：先驗證（若系統要求點按，畫面上有解鎖按鈕）
     const saved = storeGet();
     if (saved) {
       try {
+        rawKeyB64 = saved;
         dataKey = await importDataKey(saved);
         await enterApp();
         return;
