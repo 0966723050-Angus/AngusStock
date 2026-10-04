@@ -1,7 +1,8 @@
 /* 帳務查詢：股票帳戶、交易明細、股票庫存、交易損益（架構依 帳務查詢.xlsx）
    資料庫：repo 的 ledger/ledger.enc.json（以資料金鑰加密，經 GitHub API 即時讀寫）
    { v, principal, settings, trades: [{ id, code, bd, bp, bq, bf?, sd?, sp?, type?, xr?, xd? }],
-     transfers: [{ id, date, acct: "angus"|"c", kind: "in"|"out", to?: "cash"|"c"|"angus"|"e", amount, note }], ts }
+     transfers: [{ id, date, acct: "angus"|"c"|"wei", kind: "in"|"out", to?: "cash"|"c"|"angus"|"e", amount, note }], ts }
+   weiCard＝WEI 帳戶的信用卡費（元）
    轉帳：acct＝記錄所屬帳戶（舊資料無此欄位視為 angus）；匯出的 to＝去向（現金提領或轉到其他帳戶，舊資料視為 cash），
          轉到 Angus／C 帳戶時，同一筆紀錄在對方帳戶顯示為「匯入（來自…）」
    xr＝除權：每股配股（元，面額 10 元）→ 配股股數＝持有股數×xr÷10（例：2 元＝每張配 200 股），配股成本為 0
@@ -30,7 +31,8 @@
 
   let db = null, sha = null, quotes = { rows: {} };
   let tab = "account", pnlKind = "unreal", period = "all", custom = { from: "", to: "" };
-  const tf = { angus: { kind: "all", period: "all", custom: { from: "", to: "" } }, c: { kind: "all", period: "all", custom: { from: "", to: "" } } };
+  const tf = { angus: { kind: "all", period: "all", custom: { from: "", to: "" } }, c: { kind: "all", period: "all", custom: { from: "", to: "" } },
+    wei: { kind: "all", period: "all", custom: { from: "", to: "" } } };
   const openFolds = new Set();
   const fold = (id) => `data-fold="${id}"${openFolds.has(id) ? " open" : ""}`;
 
@@ -307,9 +309,9 @@
   }
 
   // ------------------------------------------------------------ 帳戶與轉帳
-  const ACCTS = { angus: "Angus", c: "C" };
-  const DEST = { cash: "現金提領", angus: "轉到 Angus 帳戶", c: "轉到 C 帳戶", e: "轉到 E 帳戶" };
-  const OUT_TO = { angus: ["cash", "c"], c: ["cash", "angus", "e"] }; // 各帳戶匯出可選的去向
+  const ACCTS = { angus: "Angus", c: "C", wei: "WEI" };
+  const DEST = { cash: "現金提領", angus: "轉到 Angus 帳戶", c: "轉到 C 帳戶", e: "轉到 E 帳戶", wei: "轉到 WEI 帳戶" };
+  const OUT_TO = { angus: ["cash", "c"], c: ["cash", "angus", "e"], wei: ["cash", "angus", "c"] }; // 各帳戶匯出可選的去向
   const acctOf = (x) => x.acct || "angus";
   const toOf = (x) => x.to || "cash";
   // 帳戶 a 的轉帳明細：自己的紀錄＋其他帳戶轉入的紀錄；dir＝對帳戶 a 而言是匯入或匯出
@@ -360,6 +362,15 @@
           <dt>帳戶餘額</dt><dd><b>${fmt(netOf("c"))}</b> 元</dd>
         </dl>
         ${transferSection("c")}
+      </article>
+      <article class="card lg-account">
+        <h3>WEI帳戶</h3>
+        <dl>
+          <dt>帳戶金額</dt><dd><b>${fmt(netOf("wei"))}</b> 元</dd>
+          <dt>信用卡費</dt><dd><input type="number" id="lgWeiCard" step="1" min="0" inputmode="numeric" value="${db.weiCard || ""}" placeholder="輸入卡費"> 元</dd>
+          <dt>扣除卡費後餘額</dt><dd><b>${fmt(netOf("wei") - (db.weiCard || 0))}</b> 元</dd>
+        </dl>
+        ${transferSection("wei")}
       </article>
       <details class="card lg-fold" ${fold("rates")}>
         <summary>費率設定</summary>
@@ -610,6 +621,10 @@
       if (id) { if (e.target.open) openFolds.add(id); else openFolds.delete(id); }
     }, true);
     view.onchange = async (e) => {
+      if (e.target.id === "lgWeiCard") {
+        const v = Math.max(0, Math.round(Number(e.target.value) || 0));
+        if (await commit((d) => { d.weiCard = v; }, "帳務：修改 WEI 信用卡費")) draw(view);
+      }
       if (e.target.id === "lgPrincipal") {
         const v = Number(e.target.value) || 0;
         if (await commit((d) => { d.principal = v; }, "帳務：修改本金")) draw(view);
