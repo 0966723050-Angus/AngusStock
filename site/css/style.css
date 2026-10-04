@@ -724,3 +724,8 @@ a.action-btn { text-decoration: none; }
 .drawer-foot { display: flex; flex-direction: column; gap: 8px; }
 /* 進入背景時遮住畫面（App 切換器預覽不顯示資料） */
 body.privacy #app { visibility: hidden; }
+/* 帳戶卡片內的轉帳紀錄 */
+.lg-fold-inner { margin: 12px -16px -16px; border-top: 1px solid var(--border); }
+.lg-fold-inner > summary { padding: 12px 16px; }
+.lg-tf-k.out, .lg-tf-k.in { white-space: nowrap; }
+.lg-form .lg-tf-to[hidden] { display: none; }

@@ -1,7 +1,9 @@
 /* 帳務查詢：股票帳戶、交易明細、股票庫存、交易損益（架構依 帳務查詢.xlsx）
    資料庫：repo 的 ledger/ledger.enc.json（以資料金鑰加密，經 GitHub API 即時讀寫）
    { v, principal, settings, trades: [{ id, code, bd, bp, bq, bf?, sd?, sp?, type?, xr?, xd? }],
-     transfers: [{ id, date, kind: "in"|"out", amount, note }], ts }
+     transfers: [{ id, date, acct: "angus"|"c", kind: "in"|"out", to?: "cash"|"c"|"angus"|"e", amount, note }], ts }
+   轉帳：acct＝記錄所屬帳戶（舊資料無此欄位視為 angus）；匯出的 to＝去向（現金提領或轉到其他帳戶，舊資料視為 cash），
+         轉到 Angus／C 帳戶時，同一筆紀錄在對方帳戶顯示為「匯入（來自…）」
    xr＝除權：每股配股（元，面額 10 元）→ 配股股數＝持有股數×xr÷10（例：2 元＝每張配 200 股），配股成本為 0
    xd＝除息：每股配息（元）→ 現金股利＝持有股數（不含本次配股）×xd，無條件捨去到元，計入該筆損益
    每筆交易＝一批買進（可含賣出）；部分賣出時自動拆成「已賣出」與「持有中」兩筆 */
@@ -28,7 +30,7 @@
 
   let db = null, sha = null, quotes = { rows: {} };
   let tab = "account", pnlKind = "unreal", period = "all", custom = { from: "", to: "" };
-  let tfKind = "all", tfPeriod = "all", tfCustom = { from: "", to: "" };
+  const tf = { angus: { kind: "all", period: "all", custom: { from: "", to: "" } }, c: { kind: "all", period: "all", custom: { from: "", to: "" } } };
   const openFolds = new Set();
   const fold = (id) => `data-fold="${id}"${openFolds.has(id) ? " open" : ""}`;
 
@@ -304,6 +306,23 @@
     return Object.values(g).map((h) => ({ ...h, bq: +h.bq.toFixed(3), price: priceOf(h.code), avg: h.amtB / (h.bq * 1000), upnl: h.priced ? h.net - h.payable : null }));
   }
 
+  // ------------------------------------------------------------ 帳戶與轉帳
+  const ACCTS = { angus: "Angus", c: "C" };
+  const DEST = { cash: "現金提領", angus: "轉到 Angus 帳戶", c: "轉到 C 帳戶", e: "轉到 E 帳戶" };
+  const OUT_TO = { angus: ["cash", "c"], c: ["cash", "angus", "e"] }; // 各帳戶匯出可選的去向
+  const acctOf = (x) => x.acct || "angus";
+  const toOf = (x) => x.to || "cash";
+  // 帳戶 a 的轉帳明細：自己的紀錄＋其他帳戶轉入的紀錄；dir＝對帳戶 a 而言是匯入或匯出
+  function entries(a) {
+    const out = [];
+    for (const x of db.transfers) {
+      if (acctOf(x) === a) out.push({ x, dir: x.kind, label: x.kind === "in" ? "匯入" : DEST[toOf(x)] || "匯出" });
+      else if (x.kind === "out" && toOf(x) === a) out.push({ x, dir: "in", label: `匯入（來自 ${ACCTS[acctOf(x)]}）` });
+    }
+    return out;
+  }
+  const netOf = (a) => entries(a).reduce((s, e) => s + (e.dir === "in" ? e.x.amount : -e.x.amount), 0);
+
   function accountTab() {
     const T = all();
     const realized = T.filter((t) => t.sold).reduce((s, t) => s + t.pnl, 0);
@@ -313,9 +332,7 @@
     const holdDiv = hold.reduce((s, t) => s + t.div, 0);
     const mv = holdings().reduce((s, h) => s + h.mv, 0);
     const p = db.principal || 0;
-    const tin = db.transfers.filter((x) => x.kind === "in").reduce((s, x) => s + x.amount, 0);
-    const tout = db.transfers.filter((x) => x.kind === "out").reduce((s, x) => s + x.amount, 0);
-    const base = p + tin - tout; // 投入資金＝本金＋匯入－匯出
+    const base = p + netOf("angus"); // 投入資金＝本金＋轉帳淨額（匯入－匯出）
     const balance = base + realized + rebates + holdDiv - cost;
     const totalV = balance + mv;
     const gain = totalV - base;
@@ -329,15 +346,21 @@
         <h3>Angus股票帳戶</h3>
         <dl>
           <dt>本金</dt><dd><input type="number" id="lgPrincipal" step="1" inputmode="numeric" value="${p || ""}" placeholder="輸入本金"> 元</dd>
-          <dt>轉帳淨額</dt><dd><b class="${cls(tin - tout)}">${sgn(tin - tout)}</b> 元</dd>
           <dt>帳戶餘額</dt><dd><b>${fmt(balance)}</b> 元</dd>
           <dt>股票市值</dt><dd><b>${fmt(mv)}</b> 元</dd>
           <dt>帳戶總額</dt><dd><b>${fmt(totalV)}</b> 元</dd>
           <dt>交易盈虧</dt><dd><b class="${cls(gain)}">${sgn(gain)}</b> 元　<b class="${cls(gain)}">${base ? sgn(gain / base * 100, 2) : "--"}</b> %</dd>
         </dl>
         <p class="muted small">帳戶餘額＝本金＋轉帳淨額＋已實現損益＋手續費回沖＋持股除息－持股投入成本；帳戶總額＝帳戶餘額＋股票市值；交易盈虧以（本金＋轉帳淨額）為基準。</p>
+        ${transferSection("angus")}
       </article>
-      ${transferSection()}
+      <article class="card lg-account">
+        <h3>C帳戶</h3>
+        <dl>
+          <dt>帳戶餘額</dt><dd><b>${fmt(netOf("c"))}</b> 元</dd>
+        </dl>
+        ${transferSection("c")}
+      </article>
       <details class="card lg-fold" ${fold("rates")}>
         <summary>費率設定</summary>
         <div class="tbl-wrap"><table class="tbl lg-rates">
@@ -353,30 +376,29 @@
       </details>`;
   }
 
-  // 轉帳匯入／匯出：紀錄與查詢
-  function transferSection() {
+  // 帳戶內的轉帳紀錄（收合／展開）與查詢
+  function transferSection(a) {
+    const f = tf[a];
     const PER = [["all", "全部"], ["month", "本月"], ["lastmonth", "上月"], ["year", "今年"], ["custom", "自訂"]];
-    const list = db.transfers
-      .filter((x) => (tfKind === "all" || x.kind === tfKind) && inPeriod(x.date, tfPeriod, tfCustom))
-      .sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
-    const sIn = list.filter((x) => x.kind === "in").reduce((s, x) => s + x.amount, 0);
-    const sOut = list.filter((x) => x.kind === "out").reduce((s, x) => s + x.amount, 0);
-    const allIn = db.transfers.filter((x) => x.kind === "in").reduce((s, x) => s + x.amount, 0);
-    const allOut = db.transfers.filter((x) => x.kind === "out").reduce((s, x) => s + x.amount, 0);
+    const all = entries(a);
+    const list = all.filter((e) => (f.kind === "all" || e.dir === f.kind) && inPeriod(e.x.date, f.period, f.custom))
+      .sort((p, q) => (q.x.date > p.x.date ? 1 : q.x.date < p.x.date ? -1 : 0));
+    const sum = (arr, d) => arr.filter((e) => e.dir === d).reduce((s, e) => s + e.x.amount, 0);
+    const sIn = sum(list, "in"), sOut = sum(list, "out"), net = sum(all, "in") - sum(all, "out");
     return `
-      <details class="card lg-fold" ${fold("transfers")}>
-      <summary>轉帳紀錄<span class="lg-fold-meta">${db.transfers.length} 筆・淨額 <b class="${cls(allIn - allOut)}">${sgn(allIn - allOut)}</b></span></summary>
+      <details class="lg-fold lg-fold-inner" ${fold("tf-" + a)}>
+      <summary>轉帳紀錄<span class="lg-fold-meta">${all.length} 筆・淨額 <b class="${cls(net)}">${sgn(net)}</b></span></summary>
       <div class="lg-fold-body">
-      <div class="lg-tf-bar"><button type="button" class="btn-primary lg-tf-add" data-act="addTransfer">＋ 新增轉帳</button></div>
+      <div class="lg-tf-bar"><button type="button" class="btn-primary lg-tf-add" data-addtf="${a}">＋ 新增轉帳</button></div>
       <div class="seg lg-tf-kind" role="group" aria-label="轉帳類型">${[["all", "全部"], ["in", "匯入"], ["out", "匯出"]]
-        .map(([k, t]) => `<button type="button" data-tfkind="${k}" aria-pressed="${k === tfKind}">${t}</button>`).join("")}</div>
-      <div class="seg lg-tf-period" role="group" aria-label="查詢區間">${PER.map(([k, t]) => `<button type="button" data-tfperiod="${k}" aria-pressed="${k === tfPeriod}">${t}</button>`).join("")}</div>
-      ${tfPeriod === "custom" ? `<div class="lg-custom"><input type="date" id="tfFrom" value="${esc(tfCustom.from)}"> ～ <input type="date" id="tfTo" value="${esc(tfCustom.to)}"></div>` : ""}
+        .map(([k, t]) => `<button type="button" data-tfkind="${a}:${k}" aria-pressed="${k === f.kind}">${t}</button>`).join("")}</div>
+      <div class="seg lg-tf-period" role="group" aria-label="查詢區間">${PER.map(([k, t]) => `<button type="button" data-tfperiod="${a}:${k}" aria-pressed="${k === f.period}">${t}</button>`).join("")}</div>
+      ${f.period === "custom" ? `<div class="lg-custom"><input type="date" data-tffrom="${a}" value="${esc(f.custom.from)}"> ～ <input type="date" data-tfto="${a}" value="${esc(f.custom.to)}"></div>` : ""}
       <div class="tbl-wrap"><table class="tbl lg-tbl lg-tf">
         <thead><tr><th>日期</th><th>類型</th><th>金額</th><th>備註</th></tr></thead>
-        <tbody>${list.map((x) => `<tr class="link" data-tf="${esc(x.id)}" tabindex="0">
-          <td>${esc(x.date)}</td><td><span class="lg-tf-k ${x.kind}">${x.kind === "in" ? "匯入" : "匯出"}</span></td>
-          <td class="num ${x.kind === "in" ? "up" : "down"}">${x.kind === "in" ? "+" : "−"}${fmt(x.amount)}</td><td class="lg-note">${esc(x.note || "")}</td></tr>`).join("") ||
+        <tbody>${list.map((e) => `<tr class="link" data-tf="${esc(e.x.id)}" tabindex="0">
+          <td>${esc(e.x.date)}</td><td><span class="lg-tf-k ${e.dir}">${esc(e.label)}</span></td>
+          <td class="num ${e.dir === "in" ? "up" : "down"}">${e.dir === "in" ? "+" : "−"}${fmt(e.x.amount)}</td><td class="lg-note">${esc(e.x.note || "")}</td></tr>`).join("") ||
           '<tr><td colspan="4" class="empty">此區間沒有轉帳紀錄</td></tr>'}</tbody>
       </table></div>
       <div class="lg-sum"><span>匯入：<b class="up">${fmt(sIn)}</b></span><span>匯出：<b class="down">${fmt(sOut)}</b></span><span>淨額：<b class="${cls(sIn - sOut)}">${sgn(sIn - sOut)}</b></span><span class="muted">共 ${list.length} 筆</span></div>
@@ -384,41 +406,51 @@
       </details>`;
   }
 
-  function transferForm(view, x) {
+  // 新增／編輯轉帳（a＝紀錄所屬帳戶）
+  function transferForm(view, a, x) {
     const isNew = !x;
-    x = x || { date: todayISO(), kind: "in" };
+    x = x || { date: todayISO(), kind: "in", acct: a };
+    a = acctOf(x);
+    const to = toOf(x);
     const el = sheet(`
       <header class="sheet-head">
         <button type="button" class="sheet-btn" data-act="cancel">取消</button>
-        <h2>${isNew ? "新增轉帳" : "編輯轉帳"}</h2>
+        <h2>${ACCTS[a]} 帳戶・${isNew ? "新增轉帳" : "編輯轉帳"}</h2>
         <button type="button" class="sheet-btn strong" data-act="save">儲存</button>
       </header>
       <div class="sheet-body">
         <form class="lg-form" autocomplete="off">
           <div class="seg lg-tf-pick full" role="radiogroup">
             <label><input type="radio" name="kind" value="in"${x.kind === "in" ? " checked" : ""}> 匯入（存入帳戶）</label>
-            <label><input type="radio" name="kind" value="out"${x.kind === "out" ? " checked" : ""}> 匯出（從帳戶提領）</label>
+            <label><input type="radio" name="kind" value="out"${x.kind === "out" ? " checked" : ""}> 匯出</label>
           </div>
+          <label class="full lg-tf-to"${x.kind === "out" ? "" : " hidden"}>匯出去向<select name="to">
+            ${OUT_TO[a].map((k) => `<option value="${k}"${k === to ? " selected" : ""}>${DEST[k]}</option>`).join("")}
+          </select></label>
           <label>日期<input type="date" name="date" value="${esc(x.date)}" required></label>
           <label>金額（元）<input type="number" name="amount" step="1" min="1" inputmode="numeric" value="${x.amount ?? ""}" required></label>
           <label class="full">備註<input name="note" maxlength="60" value="${esc(x.note || "")}" placeholder="例如：薪資轉入、提領"></label>
           ${isNew ? "" : '<button type="button" class="btn-danger" data-act="delete">刪除這筆轉帳</button>'}
         </form>
       </div>`);
+    const form = el.querySelector("form");
+    form.addEventListener("change", () => { el.querySelector(".lg-tf-to").hidden = form.elements.kind.value !== "out"; });
     el.addEventListener("click", async (e) => {
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "cancel") closeSheet(el);
       if (act === "delete") {
-        if (!confirm("確定要刪除這筆轉帳？")) return;
+        if (!confirm("確定要刪除這筆轉帳？" + (x.kind === "out" && (toOf(x) === "angus" || toOf(x) === "c") ? "\n（對方帳戶的轉入紀錄也會一併刪除）" : ""))) return;
         closeSheet(el);
         if (await commit((d) => { d.transfers = (d.transfers || []).filter((y) => y.id !== x.id); }, "帳務：刪除轉帳")) draw(view);
       }
       if (act === "save") {
-        const v = Object.fromEntries(new FormData(el.querySelector("form")));
+        const v = Object.fromEntries(new FormData(form));
         const amount = Math.round(Number(v.amount));
         if (!v.date || !(amount > 0)) { App.toast("請填寫日期與金額"); return; }
         closeSheet(el);
-        const rec = { id: x.id || uid(), date: v.date, kind: v.kind === "out" ? "out" : "in", amount, note: (v.note || "").trim() };
+        const kind = v.kind === "out" ? "out" : "in";
+        const rec = { id: x.id || uid(), date: v.date, acct: a, kind, amount, note: (v.note || "").trim(),
+          ...(kind === "out" ? { to: OUT_TO[a].includes(v.to) ? v.to : "cash" } : {}) };
         if (await commit((d) => { d.transfers = (d.transfers || []).filter((y) => y.id !== rec.id).concat(rec); }, isNew ? "帳務：新增轉帳" : "帳務：修改轉帳")) draw(view);
       }
     });
@@ -554,12 +586,13 @@
       const p = e.target.closest("[data-period]");
       if (p) { period = p.dataset.period; draw(view); return; }
       const tk = e.target.closest("[data-tfkind]");
-      if (tk) { tfKind = tk.dataset.tfkind; draw(view); return; }
+      if (tk) { const [a, k] = tk.dataset.tfkind.split(":"); tf[a].kind = k; draw(view); return; }
       const tp = e.target.closest("[data-tfperiod]");
-      if (tp) { tfPeriod = tp.dataset.tfperiod; draw(view); return; }
-      if (e.target.closest("[data-act=addTransfer]")) { transferForm(view); return; }
-      const tf = e.target.closest("[data-tf]");
-      if (tf) { const x = db.transfers.find((y) => y.id === tf.dataset.tf); if (x) transferForm(view, x); return; }
+      if (tp) { const [a, k] = tp.dataset.tfperiod.split(":"); tf[a].period = k; draw(view); return; }
+      const ad = e.target.closest("[data-addtf]");
+      if (ad) { transferForm(view, ad.dataset.addtf); return; }
+      const tr0 = e.target.closest("[data-tf]");
+      if (tr0) { const x = db.transfers.find((y) => y.id === tr0.dataset.tf); if (x) transferForm(view, acctOf(x), x); return; }
       const s = e.target.closest("[data-sell]");
       if (s) { sellForm(view, s.dataset.sell); return; }
       const tr = e.target.closest("[data-id]");
@@ -581,8 +614,9 @@
         const v = Number(e.target.value) || 0;
         if (await commit((d) => { d.principal = v; }, "帳務：修改本金")) draw(view);
       }
-      if (e.target.id === "tfFrom" || e.target.id === "tfTo") {
-        tfCustom[e.target.id === "tfFrom" ? "from" : "to"] = e.target.value;
+      const a = e.target.dataset && (e.target.dataset.tffrom || e.target.dataset.tfto);
+      if (a) {
+        tf[a].custom[e.target.dataset.tffrom ? "from" : "to"] = e.target.value;
         draw(view);
       }
       if (e.target.id === "lgFrom" || e.target.id === "lgTo") {
