@@ -16,6 +16,8 @@ on:
     - cron: "50 15 * * 1-5"
     # 個股基本面快取：台北 21:30（抓取約 5 分鐘，與一般更新分開，手動更新時不必等待）
     - cron: "30 13 * * 1-5"
+    # 財經新聞：每小時 20 分（只更新新聞）
+    - cron: "20 * * * *"
     # 國際股市：台北 21:00～05:00、08:00～14:00 每半小時（分鐘取 05／35，與上方時段區隔；只更新國際行情）
     - cron: "5,35 13-20 * * *"
     - cron: "5 21 * * *"
@@ -23,7 +25,7 @@ on:
     - cron: "5 6 * * *"
   push:
     branches: [main]
-    paths-ignore: ["state/**", "ledger/**", "site/data/intl.enc.json", "site/data/intl_list.enc.json", "site/data/instrank.enc.json", "site/data/home.enc.json", "site/data/quotes.enc.json", "site/data/watchlist.enc.json", "site/data/stocks.enc.json", "site/data/ohlc.enc.json"]
+    paths-ignore: ["state/**", "ledger/**", "site/data/news.enc.json", "site/data/intl.enc.json", "site/data/intl_list.enc.json", "site/data/instrank.enc.json", "site/data/home.enc.json", "site/data/quotes.enc.json", "site/data/watchlist.enc.json", "site/data/stocks.enc.json", "site/data/ohlc.enc.json"]
   workflow_dispatch:
     inputs:
       force:
@@ -40,6 +42,10 @@ on:
         default: false
       fund_only:
         description: "只更新個股基本面快取"
+        type: boolean
+        default: false
+      news:
+        description: "只更新財經新聞"
         type: boolean
         default: false
       intl:
@@ -60,13 +66,15 @@ jobs:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
     concurrency:
-      group: update-${{ ((inputs.intl || '') != '' || startsWith(github.event.schedule, '5,35 ') || startsWith(github.event.schedule, '5 ')) && 'intl' || 'main' }}
+      group: update-${{ ((inputs.intl || '') != '' || inputs.news || github.event.schedule == '20 * * * *' || startsWith(github.event.schedule, '5,35 ') || startsWith(github.event.schedule, '5 ')) && 'intl' || 'main' }}
       cancel-in-progress: false
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
     env:
       # 國際股市模式：網頁送出 intl 參數，或由國際股市排程（分鐘 05／35）觸發
       INTL_MODE: ${{ (inputs.intl || '') != '' || startsWith(github.event.schedule, '5,35 ') || startsWith(github.event.schedule, '5 ') }}
+      # 財經新聞模式：每小時排程（20 分）或網頁「立即更新新聞」
+      NEWS_MODE: ${{ inputs.news == true || github.event.schedule == '20 * * * *' }}
     steps:
       - name: 取消卡住超過 10 分鐘的執行（GitHub Pages 部署偶爾會卡在 waiting）
         env:
@@ -80,6 +88,11 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/requirements.txt
       - run: pip install -r scripts/requirements.txt
+      - name: 財經新聞
+        if: env.NEWS_MODE == 'true'
+        env:
+          DATA_KEY: ${{ secrets.DATA_KEY }}
+        run: python scripts/news.py
       - name: 國際股市行情
         if: env.INTL_MODE == 'true'
         env:
@@ -87,14 +100,14 @@ jobs:
           INTL_BLOB: ${{ inputs.intl }}
         run: python scripts/intl.py
       - name: 還原個股資料快取
-        if: env.INTL_MODE != 'true'
+        if: env.INTL_MODE != 'true' && env.NEWS_MODE != 'true'
         uses: actions/cache/restore@v4
         with:
           path: cache
           key: stock-cache-${{ github.run_id }}
           restore-keys: stock-cache-
       - name: 抓取資料
-        if: env.INTL_MODE != 'true'
+        if: env.INTL_MODE != 'true' && env.NEWS_MODE != 'true'
         env:
           PYTHONUNBUFFERED: "1"
           DATA_KEY: ${{ secrets.DATA_KEY }}
@@ -109,7 +122,7 @@ jobs:
             python scripts/update_data.py ${{ inputs.force && '--force' || '' }}
           fi
       - name: 儲存個股資料快取
-        if: always() && env.INTL_MODE != 'true'
+        if: always() && env.INTL_MODE != 'true' && env.NEWS_MODE != 'true'
         uses: actions/cache/save@v4
         with:
           path: cache

@@ -729,3 +729,19 @@ body.privacy #app { visibility: hidden; }
 .lg-fold-inner > summary { padding: 12px 16px; }
 .lg-tf-k.out, .lg-tf-k.in { white-space: nowrap; }
 .lg-form .lg-tf-to[hidden] { display: none; }
+
+/* 財經新聞 */
+.nw-tabs { padding: 0 0 10px; }
+.nw-tabs button { flex: 1; }
+.seg button small { margin-left: 4px; opacity: .7; font-size: 11px; }
+.nw-stocks { padding: 0 0 10px; flex-wrap: nowrap; }
+.nw-list { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.nw-list li + li { border-top: 1px solid var(--border); }
+.nw-list a { display: block; padding: 11px 14px; color: var(--text); text-decoration: none; }
+.nw-list a:active, .nw-list a:hover { background: var(--surface-2); }
+.nw-list a:visited .nw-t { color: var(--muted); }
+.nw-t { display: block; font-size: 15px; line-height: 1.45; font-weight: 500; }
+.nw-m { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; font-size: 12px; color: var(--muted); align-items: center; }
+.nw-tag { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); padding: 0 6px; border-radius: 999px; }
+.nw-list li.empty { padding: 18px; text-align: center; color: var(--muted); }
+.nw-more { margin-top: 10px; }
