@@ -139,6 +139,34 @@
     { key: "ma20", label: "MA20" }, { key: "ma50", label: "MA50" }, { key: "sarUp", label: "SAR多" }, { key: "sarDn", label: "SAR空" }, { key: "ema", label: "EMA" },
     { key: "vp", label: "成交量分佈" },
   ];
+  // ------------------------------------------------------------ 斐波那契回調（Fibonacci Retracement）
+  // localStorage "angus.fib"：{ ratios: [23.6, ...], lines: { 代號: { a: { d, p }, b: { d, p } } } }
+  // a＝起點、b＝終點（以日期記錄，價格已對齊該日最高或最低價）；各比例價位＝b －（b － a）× 比例
+  const FIB_KEY = "angus.fib";
+  const FIB_DEF = [23.6, 38.2, 50, 61.8, 78.6, 100];
+  const FIB_COLORS = ["#8a8a8a", "#e53935", "#fb8c00", "#2e9d4f", "#1e88e5", "#8e24aa", "#6d4c41", "#00897b", "#c2185b"];
+  function fibLoad() {
+    try {
+      const v = JSON.parse(localStorage.getItem(FIB_KEY) || "{}");
+      return { ratios: Array.isArray(v.ratios) && v.ratios.length ? v.ratios : FIB_DEF.slice(), lines: v.lines || {} };
+    } catch (e) { return { ratios: FIB_DEF.slice(), lines: {} }; }
+  }
+  const fibSave = (f) => { try { localStorage.setItem(FIB_KEY, JSON.stringify(f)); } catch (e) { /* ignore */ } };
+  // 繪製用：{ ia, pa, ib?, pb?, levels: [[比例, 價格]] }（以目前資料的索引表示）
+  function fibPlan(t, line, ratios) {
+    if (!line || !line.a) return null;
+    const ia = t.d.indexOf(line.a.d);
+    if (ia < 0) return null;
+    const out = { ia, pa: line.a.p };
+    if (line.b) {
+      const ib = t.d.indexOf(line.b.d);
+      if (ib < 0) return null;
+      Object.assign(out, { ib, pb: line.b.p });
+      out.levels = [0, ...ratios].map((r) => [r, line.b.p - (line.b.p - line.a.p) * r / 100]);
+    }
+    return out;
+  }
+
   function loadOverlays() {
     const def = Object.fromEntries(LINES.map((x) => [x.key, x.key !== "vp"])); // 成交量分佈預設不顯示
     try { return { ...def, ...JSON.parse(localStorage.getItem(OPT_KEY) || "{}") }; } catch (e) { return def; }
@@ -175,7 +203,7 @@
       borderColor: css("--border"), textStyle: { color: css("--muted"), fontSize: 10 }, brushSelect: false }];
   }
 
-  function klineChart(el, t, name, ov, span) {
+  function klineChart(el, t, name, ov, span, fib) {
     const P = palette();
     const c = echarts.init(el, null, { renderer: "canvas" });
     c.group = GROUP;
@@ -220,8 +248,31 @@
       vpL = VP.layout(cfg, el.clientWidth || 360, span);
       S.push(...VP.attach(c, t, VP.load, Math.max(0, n - span), n - 1, (v) => fmt(v, v >= 100 ? 1 : 2), vpL));
     }
-    const padR = 52 + (vpL && vpRight ? vpL.extra : 0), padL = 8 + (vpL && !vpRight ? vpL.extra : 0);
-    const yOff = vpL && vpRight ? vpL.extra : 0;
+    // 斐波那契標籤放在最後一根 K 棒右側的專用空間（成交量分佈在右側時，改放在線段末端內側）
+    const fibSide = !!(fib && fib.levels) && !(ov.vp && window.VP && VP.load().placement !== "left");
+    const fibExtra = fibSide ? 78 : 0;
+    if (fib) {
+      const n = t.d.length;
+      const pts = [{ coord: [fib.ia, fib.pa] }].concat(fib.ib != null ? [{ coord: [fib.ib, fib.pb] }] : []);
+      const marks = [];
+      if (fib.levels) {
+        const x0 = Math.min(fib.ia, fib.ib);
+        fib.levels.forEach(([r, v], k) => {
+          const color = FIB_COLORS[k % FIB_COLORS.length];
+          marks.push([{ coord: [x0, v], lineStyle: { color, type: r === 0 || r === 100 ? "solid" : "dashed", width: 1 },
+            label: { show: true, position: fibSide ? "end" : "insideEndTop", color, fontSize: 10, distance: fibSide ? 4 : 2,
+              formatter: `${+r.toFixed(2)}%  ${fmt(v, v >= 100 ? 1 : 2)}` } }, { coord: [n - 1, v] }]);
+        });
+        // 起點到終點的趨勢線
+        marks.push([{ coord: [fib.ia, fib.pa], lineStyle: { color: "#8a8a8a", type: "dotted", width: 1 }, label: { show: false } }, { coord: [fib.ib, fib.pb] }]);
+      }
+      S.push({ name: "斐波那契", type: "line", data: [], silent: true, z: 3,
+        markLine: { silent: true, symbol: "none", animation: false, data: marks },
+        markPoint: { silent: true, symbol: "circle", symbolSize: 7, animation: false, label: { show: false },
+          itemStyle: { color: "#fff", borderColor: "#1e88e5", borderWidth: 2 }, data: pts } });
+    }
+    const padR = 52 + fibExtra + (vpL && vpRight ? vpL.extra : 0), padL = 8 + (vpL && !vpRight ? vpL.extra : 0);
+    const yOff = fibExtra + (vpL && vpRight ? vpL.extra : 0);
     S.push({ name: "成交量", type: "bar", xAxisIndex: 1, yAxisIndex: 1, barWidth: "70%", barMaxWidth: 18,
       data: t.v.map((v, i) => ({ value: v, itemStyle: { color: volColor(i) } })) });
     S.push(line("量MA5", t.vma5, P.vma, { xAxisIndex: 1, yAxisIndex: 1, smooth: true, lineStyle: { width: 1.2 } }));
@@ -402,11 +453,16 @@
         <article class="card ta-main">
           <div class="ta-head">
             <span class="ta-badge">${esc(meta.name)}</span>
+            <span class="ta-tools">
+              <button type="button" class="fib-btn" data-fib="draw" aria-pressed="false" title="斐波那契回調：在 K 線圖上依序點選起點與終點">斐波那契</button>
+              <button type="button" class="fib-btn fib-gear" data-fib="set" aria-label="斐波那契設定" title="比例設定／清除">⚙</button>
+            </span>
             <span class="ta-zoom">
               <button type="button" class="zbtn zin" data-z="in" aria-label="放大">＋</button>
               <button type="button" class="zbtn zout" data-z="out" aria-label="縮小">－</button>
             </span>
           </div>
+          <div class="fib-hint" hidden></div>
           <div class="ta-info" data-for="0"></div>
           <div class="chart ta-k" id="taK"></div>
           <div class="ta-checks">${LINES.map((x) => `<label><input type="checkbox" data-k="${x.key}" ${ov[x.key] ? "checked" : ""}> ${x.label}</label>` +
@@ -420,9 +476,38 @@
       <p class="muted small note">K 線預設顯示近 3 個月（手機）／半年（電腦）；點選圖表可在上方資訊列查看該日數值，可用 ＋／－ 或下方拖曳條調整區間（所有圖表同步）。EMA 週期 13；布林 20 日 ±2 標準差；KD 9 日；RSI 6／12 日；DMA 為 SMA20 向後位移 5 日，AMA = 收盤 − DMA；E-Ray 為 Elder Ray（最高／最低價 − EMA13）。</p>`;
 
     const kEl = view.querySelector("#taK");
+    // 斐波那契：mode 0＝一般、1＝等待點選起點、2＝等待點選終點
+    let fibCfg = fibLoad(), fibMode = 0, fibTmp = null;
+    const fibNow = () => fibPlan(t, fibMode === 2 ? { a: fibTmp } : fibCfg.lines[code], fibCfg.ratios);
+    const hint = view.querySelector(".fib-hint"), fibBtn = view.querySelector('[data-fib="draw"]');
+    const setMode = (m) => {
+      fibMode = m;
+      fibBtn.setAttribute("aria-pressed", String(m > 0));
+      hint.hidden = m === 0;
+      hint.textContent = m === 1 ? "斐波那契：請在 K 線圖上點選起點（例如波段最低點）" : m === 2 ? "請點選終點（例如波段最高點）" : "";
+    };
+    // K 線圖點選：換算成第幾根 K 棒，價格對齊該根的最高或最低價（取較接近點選位置者）
+    const bindFib = (c) => {
+      c.getZr().on("click", (e) => {
+        if (!fibMode || !c.containPixel({ gridIndex: 0 }, [e.offsetX, e.offsetY])) return;
+        const [x] = c.convertFromPixel({ gridIndex: 0 }, [e.offsetX, e.offsetY]);
+        const i = Math.max(0, Math.min(t.d.length - 1, Math.round(x)));
+        const yH = c.convertToPixel({ gridIndex: 0 }, [i, t.h[i]])[1], yL = c.convertToPixel({ gridIndex: 0 }, [i, t.l[i]])[1];
+        const pt = { d: t.d[i], p: Math.abs(e.offsetY - yH) <= Math.abs(e.offsetY - yL) ? t.h[i] : t.l[i] };
+        if (fibMode === 1) { fibTmp = pt; setMode(2); redrawK(); return; }
+        if (pt.d === fibTmp.d && pt.p === fibTmp.p) return; // 同一點不成立
+        fibCfg = fibLoad();
+        fibCfg.lines[code] = { a: fibTmp, b: pt };
+        fibSave(fibCfg);
+        fibTmp = null;
+        setMode(0);
+        redrawK();
+      });
+    };
     const draw = () => {
       while (charts.length) charts.pop().dispose();
-      charts.push(klineChart(kEl, t, meta, ov, span));
+      charts.push(klineChart(kEl, t, meta, ov, span, fibNow()));
+      bindFib(charts[0]);
       charts.push(subChart(view.querySelector("#taMacd"), t, span, (P) => ({
         legend: true,
         series: [
@@ -501,7 +586,8 @@
     const redrawK = () => {
       const cur = charts[0].getOption().dataZoom[0];
       span = cur.endValue - cur.startValue + 1;
-      charts[0].dispose(); charts[0] = klineChart(kEl, t, meta, ov, span);
+      charts[0].dispose(); charts[0] = klineChart(kEl, t, meta, ov, span, fibNow());
+      bindFib(charts[0]);
       charts[0].dispatchAction({ type: "dataZoom", startValue: cur.startValue, endValue: cur.endValue });
       echarts.connect(GROUP);
       bindInfo();
@@ -517,6 +603,47 @@
       if (!ov.vp) { ov.vp = true; view.querySelector('[data-k="vp"]').checked = true; try { localStorage.setItem(OPT_KEY, JSON.stringify(ov)); } catch (err) { /* ignore */ } }
       redrawK();
     }));
+    view.querySelector(".ta-tools").addEventListener("click", (e) => {
+      const act = e.target.closest("[data-fib]")?.dataset.fib;
+      if (act === "draw") {
+        if (fibMode) { fibTmp = null; setMode(0); redrawK(); return; } // 再按一次取消
+        setMode(1);
+      }
+      if (act === "set") openFibSettings();
+    });
+    // 比例設定、清除目前股票的斐波那契線
+    const openFibSettings = () => {
+      const el = document.createElement("div");
+      el.className = "sheet";
+      el.innerHTML = `
+        <header class="sheet-head">
+          <button type="button" class="sheet-btn" data-act="cancel">取消</button>
+          <h2>斐波那契回調</h2>
+          <button type="button" class="sheet-btn strong" data-act="save">儲存</button>
+        </header>
+        <div class="sheet-body"><form class="lg-form fib-form" autocomplete="off">
+          <label class="full">回調比例（%，以逗號分隔）<input name="ratios" value="${fibCfg.ratios.join(", ")}" inputmode="decimal">
+            <small>預設：${FIB_DEF.join("、")}；0% 線一律顯示。價位＝終點 －（終點 － 起點）× 比例</small></label>
+          <button type="button" class="btn-ghost" data-act="reset">恢復預設比例</button>
+          <button type="button" class="btn-danger" data-act="clear"${fibCfg.lines[code] ? "" : " disabled"}>清除 ${esc(meta.name)} 的斐波那契線</button>
+          <p class="muted small">使用方式：按 K 線圖右上「斐波那契」，在圖上依序點選起點與終點（自動對齊該日最高或最低價），即畫出各比例價位；再按一次「斐波那契」可取消點選。每檔股票各自保存。</p>
+        </form></div>`;
+      document.body.appendChild(el);
+      document.body.classList.add("no-scroll");
+      const close = () => { el.remove(); if (!document.querySelector(".sheet")) document.body.classList.remove("no-scroll"); };
+      el.addEventListener("click", (ev) => {
+        const a = ev.target.closest("[data-act]")?.dataset.act;
+        if (a === "cancel") close();
+        if (a === "reset") el.querySelector("[name=ratios]").value = FIB_DEF.join(", ");
+        if (a === "clear") { fibCfg = fibLoad(); delete fibCfg.lines[code]; fibSave(fibCfg); close(); redrawK(); App.toast("已清除斐波那契線"); }
+        if (a === "save") {
+          const r = [...new Set(el.querySelector("[name=ratios]").value.split(/[,，、\s]+/).map(Number).filter((x) => isFinite(x) && x > 0 && x <= 500))].sort((x, y) => x - y);
+          if (!r.length) { App.toast("請輸入至少一個比例"); return; }
+          fibCfg = fibLoad(); fibCfg.ratios = r; fibSave(fibCfg);
+          close(); redrawK();
+        }
+      });
+    };
     view.querySelector(".ta-zoom").addEventListener("click", (e) => {
       const z = e.target.closest("[data-z]")?.dataset.z;
       if (!z) return;

@@ -745,3 +745,12 @@ body.privacy #app { visibility: hidden; }
 .nw-tag { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); padding: 0 6px; border-radius: 999px; }
 .nw-list li.empty { padding: 18px; text-align: center; color: var(--muted); }
 .nw-more { margin-top: 10px; }
+
+/* 技術分析：斐波那契回調 */
+.ta-tools { display: flex; gap: 6px; margin-left: auto; margin-right: 8px; }
+.fib-btn { height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.fib-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.fib-gear { width: 36px; padding: 0; font-size: 16px; }
+.fib-hint { margin: 8px 12px 0; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); font-size: 13px; font-weight: 600; }
+:root[data-theme="dark"] .fib-hint { color: #8ab4f8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .fib-hint { color: #8ab4f8; } }
