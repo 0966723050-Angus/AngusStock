@@ -126,6 +126,8 @@
     if (res.length && res.every((x) => x.status === "rejected")) throw res[0].reason;
     quotes.latest = Object.values(quotes.rows).reduce((m, r) => (r[8] && r[8] > m ? r[8] : m), "");
     quotes.updated = App.taipei() + "（即時）";
+    // 暫存自選股的即時報價，重開 App 時先顯示
+    App.liveSave("watch", { updated: quotes.updated, rows: Object.fromEntries(items.filter((c) => quotes.rows[c]).map((c) => [c, quotes.rows[c]])) });
   }
   // 只更新表格內容與時間，保留捲動位置
   function paint(view) {
@@ -284,6 +286,8 @@
   async function render(view) {
     const [q, wl] = await Promise.all([App.loadData("quotes"), loadList()]);
     quotes = q;
+    const cached = await App.liveLoad("watch", q.updated); // 比網站資料新的即時報價暫存
+    if (cached) { Object.assign(quotes.rows, cached.rows); quotes.updated = cached.updated; }
     quotes.latest = Object.values(q.rows).reduce((m, r) => (r[8] && r[8] > m ? r[8] : m), "");
     items = wl.items;
     App.setUpdated(q.updated);

@@ -81,6 +81,7 @@
       data.rows[s] = [(old && old[0]) || nameOf(s) || r.name || s, r.p, chg, r.h, r.l, r.v || null, r.prev, r.time ? tpe(r.time) : null, r.cur];
     }
     data.updated = App.taipei() + "（即時）";
+    App.liveSave("intl", { updated: data.updated, rows: Object.fromEntries(items.filter((s) => data.rows[s]).map((s) => [s, data.rows[s]])) });
   }
   function paint(view) {
     const tb = view.querySelector(".watch-tbl tbody"), meta = view.querySelector(".watch-meta .muted");
@@ -216,6 +217,8 @@
   async function render(view) {
     const [d, wl] = await Promise.all([App.loadData("intl").catch(() => ({ rows: {}, catalog: [] })), loadList()]);
     data = d;
+    const cached = await App.liveLoad("intl", d.updated);
+    if (cached) { data.rows = { ...data.rows, ...cached.rows }; data.updated = cached.updated; }
     items = wl.items;
     App.setUpdated(d.updated);
     const btn = document.createElement("button");

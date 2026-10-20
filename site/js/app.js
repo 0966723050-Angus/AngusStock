@@ -206,6 +206,24 @@
       try { return await once(); } catch (e2) { throw (e2.errors || [e2])[0]; }
     }
   }
+  // 即時報價暫存：關閉 App 後重開時先顯示最後一次的即時資料（以資料金鑰加密存於本機），
+  // 只有比網站資料新的暫存才會採用；之後照常向中轉服務取得最新報價
+  const LIVE_PREFIX = "angus.live.";
+  async function liveSave(name, obj) {
+    try { localStorage.setItem(LIVE_PREFIX + name, JSON.stringify(await encryptJSON({ ...obj, ts: Date.now() }))); } catch (e) { /* ignore */ }
+  }
+  async function liveLoad(name, serverUpdated) {
+    try {
+      const raw = localStorage.getItem(LIVE_PREFIX + name);
+      if (!raw) return null;
+      const obj = await decryptJSON(JSON.parse(raw));
+      const st = serverUpdated ? Date.parse(String(serverUpdated).slice(0, 16).replace(" ", "T") + ":00+08:00") : 0;
+      return obj.ts > (st || 0) ? obj : null;
+    } catch (e) { return null; }
+  }
+  function liveClear() {
+    try { Object.keys(localStorage).filter((k) => k.startsWith(LIVE_PREFIX)).forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
+  }
   // 台北時間（字串 YYYY-MM-DD HH:mm:ss）與台股／台指期交易時段
   const taipei = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 19).replace("T", " ");
   function marketOpen() {
@@ -477,7 +495,7 @@
     $("#scrim").addEventListener("click", () => openMenu(false));
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") openMenu(false); });
     $("#logoutBtn").addEventListener("click", () => {
-      storeClear(); bioSet(null); dataKey = null; rawKeyB64 = null; openMenu(false); showLogin("已登出");
+      storeClear(); bioSet(null); liveClear(); dataKey = null; rawKeyB64 = null; openMenu(false); showLogin("已登出");
     });
     $("#bioBtn").addEventListener("click", async () => {
       if (bioGet()) {
@@ -544,7 +562,7 @@
   }
 
   window.App = {
-    start, register, upcoming: upcomingItem, loadData, encryptJSON, decryptJSON, repoRead, repoWrite, live, twQuotes, hasLive: async () => !!(await liveCfg()), taipei, marketOpen, toast, bar,
+    start, register, upcoming: upcomingItem, loadData, encryptJSON, decryptJSON, repoRead, repoWrite, live, twQuotes, liveSave, liveLoad, hasLive: async () => !!(await liveCfg()), taipei, marketOpen, toast, bar,
     runUpdate, isUpdating: () => updating,
     setAction: (el) => { const a = $("#pageAction"); a.innerHTML = ""; if (el) a.appendChild(el); }, setUpdated: (t) => { $("#drawerUpdated").textContent = t ? "資料更新：" + t : ""; } };
 })();

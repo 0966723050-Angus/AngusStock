@@ -476,7 +476,10 @@
       d[mkt] = card;
       changed = true;
     }
-    if (changed) d.updated = App.taipei() + "（即時）";
+    if (changed) {
+      d.updated = App.taipei() + "（即時）";
+      App.liveSave("index", { updated: d.updated, tse: d.tse, otc: d.otc });
+    }
     return changed;
   }
   function paintIndex(view, d) {
@@ -497,6 +500,8 @@
   async function render(view) {
     disposeCharts();
     const d = await App.loadData("home");
+    const cached = await App.liveLoad("index", d.updated); // 比網站資料新的大盤即時暫存
+    if (cached) Object.assign(d, { tse: cached.tse, otc: cached.otc, updated: cached.updated });
     App.setUpdated(d.updated);
     view.innerHTML = `
       <div class="section-title"><h2>大盤指數</h2><span class="muted small idx-updated">更新時間 ${d.updated || "--"}</span></div>
