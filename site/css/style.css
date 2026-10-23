@@ -874,3 +874,10 @@ body {
 .lg-td-period { padding: 0 0 10px; }
 .lg-td-sum span { flex: 1 1 100%; }
 .lg-td-sum span.muted { flex: none; }
+/* 技術分析：名稱徽章與右側按鈕不互相擠壓 */
+.ta-head { gap: 8px; }
+.ta-badge { min-width: 0; flex: 0 1 auto; line-height: 1.15; padding: 4px 10px; overflow-wrap: anywhere; }
+.ta-badge small { display: block; font-size: .72em; font-weight: 700; }
+.ta-tools, .ta-zoom { flex-shrink: 0; }
+.fib-btn { white-space: nowrap; }
+@media (max-width: 420px) { .ta-badge { font-size: 16px; } .fib-btn { padding: 0 8px; font-size: 13px; } .zbtn { width: 36px; } }

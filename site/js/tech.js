@@ -371,6 +371,14 @@
   }
 
   // ------------------------------------------------------------ 頁面
+  // K 線圖左上名稱：名稱較長時在括號或「-」處分成兩行（例：台指期近月／(日盤)），避免擠壓右側按鈕
+  function badgeName(name) {
+    const n = String(name || "");
+    const m = n.match(/^(.{2,}?)([（(].*|-KY|-創)$/);
+    if (n.length > 5 && m) return `${esc(m[1])}<small>${esc(m[2])}</small>`;
+    return esc(n);
+  }
+
   async function render(view, params) {
     while (charts.length) charts.pop().dispose();
     echarts.disconnect(GROUP);
@@ -452,7 +460,7 @@
         <aside class="card ta-panel"><div class="ta-name">${esc(meta.name)}</div>${panel(t, meta)}</aside>
         <article class="card ta-main">
           <div class="ta-head">
-            <span class="ta-badge">${esc(meta.name)}</span>
+            <span class="ta-badge">${badgeName(meta.name)}</span>
             <span class="ta-tools">
               <button type="button" class="fib-btn" data-fib="draw" aria-pressed="false" title="斐波那契回調：在 K 線圖上依序點選起點與終點">斐波那契</button>
               <button type="button" class="fib-btn fib-gear" data-fib="set" aria-label="斐波那契設定" title="比例設定／清除">⚙</button>
