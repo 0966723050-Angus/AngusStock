@@ -315,8 +315,25 @@
   const acctOf = (x) => x.acct || "angus";
   const toOf = (x) => x.to || "cash";
   // 帳戶 a 的轉帳明細：自己的紀錄＋其他帳戶轉入的紀錄；dir＝對帳戶 a 而言是匯入或匯出
+  // 手續費回沖：依月份彙總（買進回沖算在買進日、賣出回沖算在賣出日的月份）；
+  // 月份結束後，該月回沖自動轉入 C 帳戶（不計入 Angus 帳戶餘額）
+  function rebateMonths() {
+    const m = {};
+    for (const t of all()) {
+      if (t.buyRebate) m[t.bd.slice(0, 7)] = (m[t.bd.slice(0, 7)] || 0) + t.buyRebate;
+      if (t.sold && t.sellRebate) m[t.sd.slice(0, 7)] = (m[t.sd.slice(0, 7)] || 0) + t.sellRebate;
+    }
+    return m;
+  }
+  const monthEnd = (ym) => { const [y, mo] = ym.split("-").map(Number); return new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10); };
   function entries(a) {
     const out = [];
+    if (a === "c") {
+      const cur = todayISO().slice(0, 7);
+      for (const [ym, amt] of Object.entries(rebateMonths())) {
+        if (ym < cur && amt > 0) out.push({ x: { id: "rb-" + ym, date: monthEnd(ym), amount: amt, note: `${+ym.slice(0, 4)} 年 ${+ym.slice(5)} 月手續費回沖` }, dir: "in", label: "手續費回沖", auto: true });
+      }
+    }
     for (const x of db.transfers) {
       if (acctOf(x) === a) out.push({ x, dir: x.kind, label: x.kind === "in" ? "匯入" : DEST[toOf(x)] || "匯出" });
       else if (x.kind === "out" && toOf(x) === a) out.push({ x, dir: "in", label: `匯入（來自 ${ACCTS[acctOf(x)]}）` });
@@ -328,14 +345,13 @@
   function accountTab() {
     const T = all();
     const realized = T.filter((t) => t.sold).reduce((s, t) => s + t.pnl, 0);
-    const rebates = T.reduce((s, t) => s + t.buyRebate + (t.sold ? t.sellRebate : 0), 0);
     const hold = T.filter((t) => !t.sold);
     const cost = hold.reduce((s, t) => s + t.payable, 0);
     const holdDiv = hold.reduce((s, t) => s + t.div, 0);
     const mv = holdings().reduce((s, h) => s + h.mv, 0);
     const p = db.principal || 0;
     const base = p + netOf("angus"); // 投入資金＝本金＋轉帳淨額（匯入－匯出）
-    const balance = base + realized + rebates + holdDiv - cost;
+    const balance = base + realized + holdDiv - cost; // 手續費回沖不計入（每月轉入 C 帳戶）
     const totalV = balance + mv;
     const gain = totalV - base;
     const st = S();
@@ -353,7 +369,7 @@
           <dt>帳戶總額</dt><dd><b>${fmt(totalV)}</b> 元</dd>
           <dt>交易盈虧</dt><dd><b class="${cls(gain)}">${sgn(gain)}</b> 元　<b class="${cls(gain)}">${base ? sgn(gain / base * 100, 2) : "--"}</b> %</dd>
         </dl>
-        <p class="muted small">帳戶餘額＝本金＋轉帳淨額＋已實現損益＋手續費回沖＋持股除息－持股投入成本；帳戶總額＝帳戶餘額＋股票市值；交易盈虧以（本金＋轉帳淨額）為基準。</p>
+        <p class="muted small">帳戶餘額＝本金＋轉帳淨額＋已實現損益＋持股除息－持股投入成本（手續費回沖每月底轉入 C 帳戶）；帳戶總額＝帳戶餘額＋股票市值；交易盈虧以（本金＋轉帳淨額）為基準。</p>
         ${transferSection("angus")}
       </article>
       <article class="card lg-account">
@@ -361,6 +377,7 @@
         <dl>
           <dt>帳戶餘額</dt><dd><b>${fmt(netOf("c"))}</b> 元</dd>
         </dl>
+        ${(() => { const pend = rebateMonths()[todayISO().slice(0, 7)] || 0; return pend ? `<p class="muted small">本月手續費回沖累計 ${fmt(pend)} 元，將於月底轉入。</p>` : ""; })()}
         ${transferSection("c")}
       </article>
       <article class="card lg-account">
@@ -407,7 +424,7 @@
       ${f.period === "custom" ? `<div class="lg-custom"><input type="date" data-tffrom="${a}" value="${esc(f.custom.from)}"> ～ <input type="date" data-tfto="${a}" value="${esc(f.custom.to)}"></div>` : ""}
       <div class="tbl-wrap"><table class="tbl lg-tbl lg-tf">
         <thead><tr><th>日期</th><th>類型</th><th>金額</th><th>備註</th></tr></thead>
-        <tbody>${list.map((e) => `<tr class="link" data-tf="${esc(e.x.id)}" tabindex="0">
+        <tbody>${list.map((e) => `<tr${e.auto ? ' class="lg-auto" title="由交易明細自動計算"' : ` class="link" data-tf="${esc(e.x.id)}" tabindex="0"`}>
           <td>${esc(e.x.date)}</td><td><span class="lg-tf-k ${e.dir}">${esc(e.label)}</span></td>
           <td class="num ${e.dir === "in" ? "up" : "down"}">${e.dir === "in" ? "+" : "−"}${fmt(e.x.amount)}</td><td class="lg-note">${esc(e.x.note || "")}</td></tr>`).join("") ||
           '<tr><td colspan="4" class="empty">此區間沒有轉帳紀錄</td></tr>'}</tbody>
