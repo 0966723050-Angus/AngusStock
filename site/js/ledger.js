@@ -536,12 +536,13 @@
     const T = all();
     const PER = [["all", "全部"], ["today", "本日"], ["lastmonth", "上月"], ["month", "本月"], ["custom", "自訂"]];
     const rows = [];
-    let rebate = 0;
+    // 手續費回沖：與轉入 C 帳戶相同，依交易日計算（買進回沖算買進日、賣出回沖算賣出日），不受損益類別影響
+    const rebate = T.reduce((s, t) => s + (inPeriod(t.bd) ? t.buyRebate : 0) + (t.sold && inPeriod(t.sd) ? t.sellRebate : 0), 0);
     if (pnlKind !== "real") { // 未實現：依買進日期篩選
       const g = {};
       for (const t of T.filter((x) => !x.sold && inPeriod(x.bd))) {
         const h = g[t.code] || (g[t.code] = { kind: "未實現", code: t.code, bq: 0, amtB: 0, cost: 0, net: 0, mv: 0, ok: true, beN: 0, beD: 0 });
-        h.bq += t.tq; h.amtB += t.amtB; h.cost += t.payable; rebate += t.buyRebate; h.beN += t.beNum; h.beD += t.beDen;
+        h.bq += t.tq; h.amtB += t.amtB; h.cost += t.payable; h.beN += t.beNum; h.beD += t.beDen;
         if (t.net == null) h.ok = false; else { h.net += t.net + t.div; h.mv += t.mv; }
       }
       Object.values(g).forEach((h) => rows.push({ ...h, price: priceOf(h.code), avg: h.amtB / (h.bq * 1000), pnl: h.ok ? h.net - h.cost : null, be: h.beD > 0 ? h.beN / h.beD : null }));
@@ -550,7 +551,7 @@
       const g = {};
       for (const t of T.filter((x) => x.sold && inPeriod(x.sd))) {
         const h = g[t.code] || (g[t.code] = { kind: "已實現", code: t.code, bq: 0, amtB: 0, amtS: 0, cost: 0, net: 0, mv: 0, ok: true, beN: 0, beD: 0 });
-        h.bq += t.tq; h.amtB += t.amtB; h.amtS += t.sp * t.sh; h.cost += t.payable; h.net += t.sellTotal + t.div; rebate += t.buyRebate + t.sellRebate;
+        h.bq += t.tq; h.amtB += t.amtB; h.amtS += t.sp * t.sh; h.cost += t.payable; h.net += t.sellTotal + t.div;
         h.beN += t.beNum; h.beD += t.beDen;
       }
       Object.values(g).forEach((h) => rows.push({ ...h, price: h.amtS / (h.bq * 1000), avg: h.amtB / (h.bq * 1000), pnl: h.net - h.cost, be: h.beD > 0 ? h.beN / h.beD : null }));
@@ -566,7 +567,7 @@
       <article class="card lg-sum-top"><div class="lg-sum">
         <span>總市值：<b>${fmt(sum("mv"))}</b></span>
         <span>投資損益：<b class="${cls(totalPnl)}">${sgn(totalPnl)}</b>${totalCost ? `（<span class="${cls(totalPnl)}">${sgn(totalPnl / totalCost * 100, 2)}%</span>）` : ""}</span>
-        <span>手續費回沖：<b>${fmt(rebate)}</b></span>
+        <span>手續費回沖：<b>${fmt(rebate)}</b><small class="muted">（依交易日）</small></span>
       </div></article>
       <ul class="lg-cards lg-pnl-cards">${rows.map((r) => `
         <li>
