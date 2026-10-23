@@ -317,21 +317,25 @@
   // 帳戶 a 的轉帳明細：自己的紀錄＋其他帳戶轉入的紀錄；dir＝對帳戶 a 而言是匯入或匯出
   // 手續費回沖：依月份彙總（買進回沖算在買進日、賣出回沖算在賣出日的月份）；
   // 月份結束後，該月回沖自動轉入 C 帳戶（不計入 Angus 帳戶餘額）
-  function rebateMonths() {
+  function rebateDetail() { // { 'YYYY-MM': { buy, sell } }
     const m = {};
+    const add = (ym, k, v) => { (m[ym] = m[ym] || { buy: 0, sell: 0 })[k] += v; };
     for (const t of all()) {
-      if (t.buyRebate) m[t.bd.slice(0, 7)] = (m[t.bd.slice(0, 7)] || 0) + t.buyRebate;
-      if (t.sold && t.sellRebate) m[t.sd.slice(0, 7)] = (m[t.sd.slice(0, 7)] || 0) + t.sellRebate;
+      if (t.buyRebate) add(t.bd.slice(0, 7), "buy", t.buyRebate);
+      if (t.sold && t.sellRebate) add(t.sd.slice(0, 7), "sell", t.sellRebate);
     }
     return m;
   }
+  const rebateMonths = () => Object.fromEntries(Object.entries(rebateDetail()).map(([k, v]) => [k, v.buy + v.sell]));
   const monthEnd = (ym) => { const [y, mo] = ym.split("-").map(Number); return new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10); };
   function entries(a) {
     const out = [];
     if (a === "c") {
       const cur = todayISO().slice(0, 7);
-      for (const [ym, amt] of Object.entries(rebateMonths())) {
-        if (ym < cur && amt > 0) out.push({ x: { id: "rb-" + ym, date: monthEnd(ym), amount: amt, note: `${+ym.slice(0, 4)} 年 ${+ym.slice(5)} 月手續費回沖` }, dir: "in", label: "手續費回沖", auto: true });
+      for (const [ym, v] of Object.entries(rebateDetail())) {
+        const amt = v.buy + v.sell;
+        if (ym < cur && amt > 0) out.push({ x: { id: "rb-" + ym, date: monthEnd(ym), amount: amt,
+          note: `${+ym.slice(5)} 月回沖：買進 ${fmt(v.buy)}＋賣出 ${fmt(v.sell)}` }, dir: "in", label: "手續費回沖", auto: true });
       }
     }
     for (const x of db.transfers) {
@@ -377,7 +381,7 @@
         <dl>
           <dt>帳戶餘額</dt><dd><b>${fmt(netOf("c"))}</b> 元</dd>
         </dl>
-        ${(() => { const pend = rebateMonths()[todayISO().slice(0, 7)] || 0; return pend ? `<p class="muted small">本月手續費回沖累計 ${fmt(pend)} 元，將於月底轉入。</p>` : ""; })()}
+        ${(() => { const v = rebateDetail()[todayISO().slice(0, 7)]; return v && v.buy + v.sell ? `<p class="muted small">本月手續費回沖累計 ${fmt(v.buy + v.sell)} 元（買進 ${fmt(v.buy)}＋賣出 ${fmt(v.sell)}），將於月底轉入。</p>` : ""; })()}
         ${transferSection("c")}
       </article>
       <article class="card lg-account">
@@ -537,7 +541,9 @@
     const PER = [["all", "全部"], ["today", "本日"], ["lastmonth", "上月"], ["month", "本月"], ["custom", "自訂"]];
     const rows = [];
     // 手續費回沖：與轉入 C 帳戶相同，依交易日計算（買進回沖算買進日、賣出回沖算賣出日），不受損益類別影響
-    const rebate = T.reduce((s, t) => s + (inPeriod(t.bd) ? t.buyRebate : 0) + (t.sold && inPeriod(t.sd) ? t.sellRebate : 0), 0);
+    const rbBuy = T.reduce((s, t) => s + (inPeriod(t.bd) ? t.buyRebate : 0), 0);
+    const rbSell = T.reduce((s, t) => s + (t.sold && inPeriod(t.sd) ? t.sellRebate : 0), 0);
+    const rebate = rbBuy + rbSell;
     if (pnlKind !== "real") { // 未實現：依買進日期篩選
       const g = {};
       for (const t of T.filter((x) => !x.sold && inPeriod(x.bd))) {
@@ -567,7 +573,7 @@
       <article class="card lg-sum-top"><div class="lg-sum">
         <span>總市值：<b>${fmt(sum("mv"))}</b></span>
         <span>投資損益：<b class="${cls(totalPnl)}">${sgn(totalPnl)}</b>${totalCost ? `（<span class="${cls(totalPnl)}">${sgn(totalPnl / totalCost * 100, 2)}%</span>）` : ""}</span>
-        <span>手續費回沖：<b>${fmt(rebate)}</b><small class="muted">（依交易日）</small></span>
+        <span>手續費回沖：<b>${fmt(rebate)}</b><small class="muted">（買進 ${fmt(rbBuy)}＋賣出 ${fmt(rbSell)}）</small></span>
       </div></article>
       <ul class="lg-cards lg-pnl-cards">${rows.map((r) => `
         <li>
