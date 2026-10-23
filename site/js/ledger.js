@@ -31,6 +31,7 @@
 
   let db = null, sha = null, quotes = { rows: {} };
   let tab = "account", pnlKind = "unreal", period = "all", custom = { from: "", to: "" };
+  let td = { period: "all", custom: { from: "", to: "" } }; // 交易明細查詢區間
   const tf = { angus: { kind: "all", period: "all", custom: { from: "", to: "" } }, c: { kind: "all", period: "all", custom: { from: "", to: "" } },
     wei: { kind: "all", period: "all", custom: { from: "", to: "" } } };
   const openFolds = new Set();
@@ -489,8 +490,26 @@
   }
 
   function tradesTab() {
-    const T = all().sort((a, b) => ((b.sd || b.bd) > (a.sd || a.bd) ? 1 : (b.sd || b.bd) < (a.sd || a.bd) ? -1 : 0));
-    if (!T.length) return '<article class="card empty">尚無交易，按右上角「＋ 新增交易」開始記錄</article>';
+    const ALL = all();
+    if (!ALL.length) return '<article class="card empty">尚無交易，按右上角「＋ 新增交易」開始記錄</article>';
+    // 查詢：買進或賣出日期落在區間內的交易；金額與回沖依各自交易日計算
+    const inP = (d) => inPeriod(d, td.period, td.custom);
+    const T = ALL.filter((t) => inP(t.bd) || (t.sold && inP(t.sd)))
+      .sort((a, b) => ((b.sd || b.bd) > (a.sd || a.bd) ? 1 : (b.sd || b.bd) < (a.sd || a.bd) ? -1 : 0));
+    const buyAmt = ALL.reduce((s, t) => s + (inP(t.bd) ? t.amtB : 0), 0);
+    const sellAmt = ALL.reduce((s, t) => s + (t.sold && inP(t.sd) ? t.sp * t.sh : 0), 0);
+    const rbBuy = ALL.reduce((s, t) => s + (inP(t.bd) ? t.buyRebate : 0), 0);
+    const rbSell = ALL.reduce((s, t) => s + (t.sold && inP(t.sd) ? t.sellRebate : 0), 0);
+    const PER = [["all", "全部"], ["lastmonth", "上月"], ["month", "本月"], ["custom", "自訂"]];
+    const query = `
+      <div class="seg lg-td-period" role="group" aria-label="查詢區間">${PER.map(([k, t]) => `<button type="button" data-tdperiod="${k}" aria-pressed="${k === td.period}">${t}</button>`).join("")}</div>
+      ${td.period === "custom" ? `<div class="lg-custom"><input type="date" data-tdfrom value="${esc(td.custom.from)}"> ～ <input type="date" data-tdto value="${esc(td.custom.to)}"></div>` : ""}
+      <article class="card lg-sum-top"><div class="lg-sum lg-td-sum">
+        <span>交易總金額：<b>${fmt(buyAmt + sellAmt)}</b><small class="muted">（買進 ${fmt(buyAmt)}＋賣出 ${fmt(sellAmt)}）</small></span>
+        <span>手續費回沖：<b>${fmt(rbBuy + rbSell)}</b><small class="muted">（買進 ${fmt(rbBuy)}＋賣出 ${fmt(rbSell)}）</small></span>
+        <span class="muted">共 ${T.length} 筆</span>
+      </div></article>`;
+    if (!T.length) return query + '<article class="card empty">此區間沒有交易</article>';
     const rows = T.map((t) => `
       <tr data-id="${esc(t.id)}" class="link" tabindex="0">
         <td class="stk"><b>${esc(nameOf(t.code))}</b><small>${esc(t.code)}</small></td>
@@ -511,8 +530,8 @@
         ${t.sold ? `<div class="lg-c-row"><span class="muted">賣</span><span>${md(t.sd)}　${fmt(t.sp, 2)} × ${qty(t.tq)} 張</span><span>收 ${fmt(t.sellTotal)}</span></div>
         <div class="lg-c-sub muted small">證交稅 ${fmt(t.tax)}・手續費 ${fmt(t.sellFee)}・回沖 ${fmt(t.sellRebate)}<b class="${cls(t.pnl)}">損益 ${sgn(t.pnl)}</b></div>` : ""}
       </li>`).join("");
-    return `
-      <p class="muted small note">點選交易可修改或刪除；部分賣出會自動拆成已賣出與持有中兩筆。</p>
+    return query + `
+      <p class="muted small note">點選交易可修改或刪除；部分賣出會自動拆成已賣出與持有中兩筆。交易總金額＝區間內買進金額＋賣出金額（成交價×股數）；手續費回沖依買進日、賣出日分別計入。</p>
       <ul class="lg-cards">${cards}</ul>
       <article class="card lg-wide"><div class="tbl-wrap"><table class="tbl lg-tbl">
         <thead><tr><th class="stk">股票</th><th>買進日期</th><th>買價</th><th>張數</th><th>手續費(買)</th><th>應付金額</th><th>手續費回沖(買)</th>
@@ -620,6 +639,8 @@
       if (k) { pnlKind = k.dataset.kind; draw(view); return; }
       const p = e.target.closest("[data-period]");
       if (p) { period = p.dataset.period; draw(view); return; }
+      const tdp = e.target.closest("[data-tdperiod]");
+      if (tdp) { td.period = tdp.dataset.tdperiod; draw(view); return; }
       const tk = e.target.closest("[data-tfkind]");
       if (tk) { const [a, k] = tk.dataset.tfkind.split(":"); tf[a].kind = k; draw(view); return; }
       const tp = e.target.closest("[data-tfperiod]");
@@ -652,6 +673,11 @@
       if (e.target.id === "lgPrincipal") {
         const v = Number(e.target.value) || 0;
         if (await commit((d) => { d.principal = v; }, "帳務：修改本金")) draw(view);
+      }
+      if (e.target.matches("[data-tdfrom], [data-tdto]")) {
+        td.custom[e.target.hasAttribute("data-tdfrom") ? "from" : "to"] = e.target.value;
+        draw(view);
+        return;
       }
       const a = e.target.dataset && (e.target.dataset.tffrom || e.target.dataset.tfto);
       if (a) {

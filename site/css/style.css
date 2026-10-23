@@ -871,3 +871,6 @@ body {
 .ta-badge { border-radius: 8px; }
 .lg-cards li, .nw-list { border-color: color-mix(in srgb, var(--border) 70%, transparent); box-shadow: var(--shadow); }
 .lg-cards li { border-radius: 14px; }
+.lg-td-period { padding: 0 0 10px; }
+.lg-td-sum span { flex: 1 1 100%; }
+.lg-td-sum span.muted { flex: none; }
