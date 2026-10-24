@@ -145,7 +145,7 @@
             <div><dt>均價</dt><dd class="lv-avg">--</dd></div><div><dt>昨收</dt><dd class="lv-prev">--</dd></div>
           </dl>
         </div>
-        <div class="live-sub muted small"><span class="lv-time">即時走勢載入中…</span><span><i class="lg-dot" style="background:#f0a020"></i> 均價線</span></div>
+        <div class="live-sub muted small"><span class="lv-time">即時走勢載入中…</span><span class="lv-legend"><span><i class="lg-dot" style="background:#f0a020"></i> 均價</span><span class="lv-idx"><i class="lg-dot" style="background:#9b51e0"></i> 加權指數</span></span></div>
         <div class="chart live-chart"></div>
       </article>`;
   }
@@ -155,7 +155,8 @@
     const k = (hi - prev) / (hi - lo);
     return new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: up }, { offset: k, color: up }, { offset: k, color: down }, { offset: 1, color: down }]);
   }
-  function drawLive(view, j) {
+  // idx：{ prev, rows: [[HH:MM, 指數]] }（加權指數當日每分鐘；與個股同一交易日才顯示）
+  function drawLive(view, j, idx) {
     const el = view.querySelector(".live-chart");
     if (!el || !j || !j.rows || !j.rows.length) {
       const t = view.querySelector(".lv-time");
@@ -188,6 +189,14 @@
     set(".lv-avg", cq ? fmt(cv / cq) : "--");
     set(".lv-prev", fmt(prev));
     set(".lv-time", `${j.day ? j.day.replace(/-/g, "/") : ""} ${last[0]}（即時）`);
+    // 加權指數：依「漲跌幅」與個股對齊（指數軸＝指數昨收 ×（1 ± 個股軸的百分比範圍））
+    const idxMap = idx && idx.prev ? new Map(idx.rows) : null;
+    const idxLine = idxMap ? TIMES.map((t) => idxMap.get(t) ?? null) : null;
+    const idxLast = idxLine ? (idx.now || [...idxLine].reverse().find((v) => v != null)) : null;
+    set(".lv-idx", idxLast != null
+      ? `<i class="lg-dot" style="background:#9b51e0"></i> 加權 ${fmt(idxLast)} <span class="${cls2(idxLast - idx.prev)}">${idxLast >= idx.prev ? "+" : ""}${fmt((idxLast / idx.prev - 1) * 100)}%</span>`
+      : "");
+    const hiI = price.indexOf(hi), loI = price.indexOf(lo);
     const old = echarts.getInstanceByDom(el);
     const c = old || echarts.init(el);
     if (!old) charts.push(c);
@@ -203,14 +212,25 @@
           axisLabel: { fontSize: 11, formatter: (v) => fmt(v, v >= 100 ? 1 : 2), color: (v) => tick(v) },
           splitLine: { lineStyle: { color: css("--grid") } } },
         { type: "value", min: 0, max: Math.max(...vol.filter((v) => v != null), 1) * 3.2, show: false },
+        { type: "value", show: false, min: idxMap ? idx.prev * (1 - span / prev) : 0, max: idxMap ? idx.prev * (1 + span / prev) : 1 },
       ],
       series: [
         { name: "成交", type: "line", data: price, showSymbol: false, connectNulls: true, emphasis: { disabled: true },
           // 線段顏色：昨收以上紅、以下綠（以線條本身的最高～最低範圍換算切換位置）
           lineStyle: { width: 1.4, color: lineColor(hi, lo, prev, up, down) },
-          markLine: { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: css("--muted"), type: "solid", width: 1 }, data: [{ yAxis: prev }] } },
+          markLine: { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: css("--muted"), type: "solid", width: 1 }, data: [{ yAxis: prev }] },
+          // 最高價、最低價標註（方框）
+          markPoint: { silent: true, symbol: "circle", symbolSize: 5, animation: false,
+            data: [
+              { coord: [hiI, hi], itemStyle: { color: up }, label: { show: true, position: hiI > TIMES.length * 0.7 ? "left" : "right", formatter: `最高 ${fmt(hi)}`,
+                color: up, fontSize: 11, fontWeight: 700, backgroundColor: css("--surface"), borderColor: up, borderWidth: 1, borderRadius: 4, padding: [2, 5], distance: 6 } },
+              { coord: [loI, lo], itemStyle: { color: down }, label: { show: true, position: loI > TIMES.length * 0.7 ? "left" : "right", formatter: `最低 ${fmt(lo)}`,
+                color: down, fontSize: 11, fontWeight: 700, backgroundColor: css("--surface"), borderColor: down, borderWidth: 1, borderRadius: 4, padding: [2, 5], distance: 6 } },
+            ] } },
         { name: "均價", type: "line", data: avg, showSymbol: false, connectNulls: true, lineStyle: { width: 1.2, color: "#f0a020" }, itemStyle: { color: "#f0a020" }, emphasis: { disabled: true } },
         { name: "量", type: "bar", yAxisIndex: 1, data: vol, barWidth: "60%", itemStyle: { color: "rgba(80,170,220,.55)" }, silent: true },
+        ...(idxLine ? [{ name: "加權指數", type: "line", yAxisIndex: 2, data: idxLine, showSymbol: false, connectNulls: true, z: 1,
+          lineStyle: { width: 1.2, color: "#9b51e0" }, itemStyle: { color: "#9b51e0" }, emphasis: { disabled: true } }] : []),
       ],
     });
   }
@@ -279,7 +299,18 @@
       const load = async () => {
         if (busy || !view.isConnected) return;
         busy = true;
-        try { drawLive(view, await App.live({ t: "intraday", s: sym }, 2)); }
+        try {
+          const [j, o, q] = await Promise.all([App.live({ t: "intraday", s: sym }, 2),
+            App.live({ t: "ohlc", m: "TSE" }, 2).catch(() => null), App.twQuotes(["tse_t00.tw"]).catch(() => null)]);
+          let idx = null;
+          const t00 = q && (q.rows || []).find((r) => r.c === "t00");
+          const prevIdx = t00 && parseFloat(t00.y);
+          if (o && o.rows && j && j.day && String(o.key || "").endsWith(j.day.replace(/-/g, "")) && prevIdx) {
+            idx = { prev: prevIdx, rows: o.rows.map((r) => [`${r[0].slice(0, 2)}:${r[0].slice(2, 4)}`, parseFloat(r[1])]),
+              now: t00.d === j.day.replace(/-/g, "") ? parseFloat(t00.z) || null : null }; // 最新／收盤指數
+          }
+          drawLive(view, j, idx);
+        }
         catch (e) { const t = view.querySelector(".lv-time"); if (t && t.textContent.includes("載入中")) t.textContent = "即時走勢暫時無法取得"; }
         finally { busy = false; }
       };

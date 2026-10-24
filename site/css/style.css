@@ -904,3 +904,5 @@ body { background: transparent; }
 .live-sub .lg-dot { width: 12px; height: 3px; vertical-align: middle; }
 .live-chart { height: 300px; }
 @media (max-width: 420px) { .live-price { font-size: 26px; } .live-kv { gap: 3px 12px; font-size: 12.5px; } .live-chart { height: 260px; } }
+.lv-legend { display: inline-flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.live-sub { flex-wrap: wrap; gap: 2px 10px; } .lv-time { white-space: nowrap; }
