@@ -881,3 +881,8 @@ body {
 .ta-tools, .ta-zoom { flex-shrink: 0; }
 .fib-btn { white-space: nowrap; }
 @media (max-width: 420px) { .ta-badge { font-size: 16px; } .fib-btn { padding: 0 8px; font-size: 13px; } .zbtn { width: 36px; } }
+/* 主畫面 App（iOS 狀態列透明）：頁面底色上半部與標題欄同色，避免狀態列區域出現霧狀淡化、下拉時露出灰底 */
+html { background: linear-gradient(to bottom, var(--bar-grad) 0 50%, var(--bg) 50% 100%); background-attachment: fixed; }
+body { background: transparent; }
+#app, #login, #lock { position: relative; }
+#app { background-color: var(--bg); }
