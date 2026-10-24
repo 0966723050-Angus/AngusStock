@@ -45,6 +45,7 @@
           <div><dt>最高</dt><dd class="v">${fmt(d.high)} ${rel(d.high_chg)}</dd></div>
           <div><dt>最低</dt><dd class="v">${fmt(d.low)} ${rel(d.low_chg)}</dd></div>
           <div><dt>開盤</dt><dd class="v">${fmt(d.open)}</dd></div>
+          ${(() => { const j = judgeLine(d.series); return j ? `<div><dt>走勢判斷線</dt><dd class="v ${cls(d.close - j.price)}">${fmt(j.price)} <small class="muted">${j.time}・${fmt(j.val, 2)} ${d.unit || "億"}</small></dd></div>` : ""; })()}
           <div><dt>連續漲跌</dt><dd class="v ${/漲/.test(d.streak) ? "up" : /跌/.test(d.streak) ? "down" : ""}">${d.streak || "--"}</dd></div>
           <div><dt>成交金額</dt><dd class="v">${fmt(d.value)} 億元</dd></div>
           <div><dt>成交張數</dt><dd class="v">${fmt(d.volume, 0)} 張</dd></div>
@@ -61,6 +62,16 @@
     </article>`;
   }
 
+  // 走勢判斷線：09:04～13:23 之間成交金額最高的那一分鐘的指數（每次更新資料都重新計算）
+  function judgeLine(series) {
+    let best = null;
+    for (const r of series || []) {
+      if (!r || r[0] < "09:04" || r[0] > "13:23" || r[1] == null || r[2] == null) continue;
+      if (!best || r[2] > best[2]) best = r;
+    }
+    return best ? { time: best[0], price: best[1], val: best[2] } : null;
+  }
+
   function drawIndexChart(el, d) {
     if (!el) return;
     if (!d.series || !d.series.length) {
@@ -74,7 +85,8 @@
     const price = times.map((t) => (map.has(t) ? map.get(t)[1] : null));
     const vol = times.map((t) => (map.has(t) ? map.get(t)[2] : null));
     const prev = d.prev;
-    const vals = price.filter((v) => v != null).concat(prev != null ? [prev] : []);
+    const jl = judgeLine(d.series);
+    const vals = price.filter((v) => v != null).concat(prev != null ? [prev] : [], jl ? [jl.price] : []);
     const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * 0.08 || 1;
     const up = css("--up"), down = css("--down");
     const unit = d.unit || "張";
@@ -115,9 +127,14 @@
         {
           name: "指數", type: "line", data: price, xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, connectNulls: false,
           lineStyle: { width: 2, color: css("--line") }, itemStyle: { color: css("--line") },
-          markLine: prev != null ? {
-            silent: true, symbol: "none", label: { show: true, position: "insideStartTop", formatter: "昨收 " + fmt(prev), color: css("--prevline"), fontSize: 10 },
-            lineStyle: { color: css("--prevline"), type: "dashed", width: 1 }, data: [{ yAxis: prev }],
+          markLine: prev != null || jl ? {
+            silent: true, symbol: "none", animation: false,
+            data: [
+              ...(prev != null ? [{ yAxis: prev, label: { show: true, position: "insideStartTop", formatter: "昨收 " + fmt(prev), color: css("--prevline"), fontSize: 10 },
+                lineStyle: { color: css("--prevline"), type: "dashed", width: 1 } }] : []),
+              ...(jl ? [{ yAxis: jl.price, label: { show: true, position: "insideEndTop", formatter: `判斷線 ${fmt(jl.price)}（${jl.time}）`, color: "#c99700", fontSize: 10, fontWeight: 600 },
+                lineStyle: { color: "#f5b800", type: "solid", width: 1.5 } }] : []),
+            ],
           } : undefined,
         },
         {
