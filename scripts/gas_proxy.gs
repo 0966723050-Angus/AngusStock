@@ -98,7 +98,7 @@ function tw(s) {
   return { rows: rows };
 }
 
-// 個股當日每分鐘走勢：rows＝[[時間 HH:MM, 收盤, 成交量(張)]]
+// 個股當日每分鐘走勢：rows＝[[時間 HH:MM, 收盤, 成交量(張), 最高, 最低]]
 function intraday(s) {
   if (!s || !/^[0-9A-Z]{4,6}\.(TW|TWO)$/.test(s)) return { error: 'bad symbol' };
   var r = fetchRetry({ url: 'https://tw.stock.yahoo.com/_td-stock/api/resource/FinanceChartService.ApacLibraCharts;symbols=' +
@@ -107,7 +107,8 @@ function intraday(s) {
   (c.timestamp || []).forEach(function (t, i) {
     if (q.close[i] == null) return;
     var d = new Date(t * 1000 + 8 * 3600e3);
-    rows.push([('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2), q.close[i], q.volume[i] || 0]);
+    rows.push([('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2), q.close[i], q.volume[i] || 0,
+      q.high[i] != null ? q.high[i] : q.close[i], q.low[i] != null ? q.low[i] : q.close[i]]);
   });
   var day = m.regularMarketTime ? new Date(m.regularMarketTime * 1000 + 8 * 3600e3).toISOString().slice(0, 10) : '';
   return { sym: s, day: day, price: m.regularMarketPrice, prev: m.previousClose, up: m.limitUpPrice, down: m.limitDownPrice, rows: rows };

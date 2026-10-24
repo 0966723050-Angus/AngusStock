@@ -175,7 +175,10 @@
       vol.push(r ? r[2] : null);
     }
     const last = j.rows[j.rows.length - 1], px = j.price ?? last[1], chg = prev != null ? px - prev : null;
-    const hi = Math.max(...j.rows.map((r) => r[1])), lo = Math.min(...j.rows.map((r) => r[1]));
+    // 當日最高／最低價：取每分鐘的最高、最低價（不是收盤價）；舊版中轉程式沒有分鐘高低時，改用證交所即時報價的當日高低
+    let hi = Math.max(...j.rows.map((r) => (r[3] != null ? r[3] : r[1]))), lo = Math.min(...j.rows.map((r) => (r[4] != null ? r[4] : r[1])));
+    if (j.dayHigh != null && j.dayHigh > hi) hi = j.dayHigh;
+    if (j.dayLow != null && j.dayLow < lo) lo = j.dayLow;
     // 價格軸以昨收為中心上下對稱，刻度一定包含昨收（藍色）
     const span = Math.max(hi - prev, prev - lo, prev * 0.005) * 1.06;
     const ymax = prev + span, ymin = prev - span;
@@ -196,7 +199,9 @@
     set(".lv-idx", idxLast != null
       ? `<i class="lg-dot" style="background:#9b51e0"></i> 加權 ${fmt(idxLast)} <span class="${cls2(idxLast - idx.prev)}">${idxLast >= idx.prev ? "+" : ""}${fmt((idxLast / idx.prev - 1) * 100)}%</span>`
       : "");
-    const hiI = price.indexOf(hi), loI = price.indexOf(lo);
+    // 標註位置：最高／最低價出現的那一分鐘（無分鐘高低資料時，取收盤最接近的那一分鐘）
+    const near = (v, k) => { let b = -1, d = Infinity; TIMES.forEach((t, i) => { const r = map.get(t); if (!r) return; const x = Math.abs((r[k] != null ? r[k] : r[1]) - v); if (x < d - 1e-9) { d = x; b = i; } }); return b; };
+    const hiI = near(hi, 3), loI = near(lo, 4);
     const old = echarts.getInstanceByDom(el);
     const c = old || echarts.init(el);
     if (!old) charts.push(c);
@@ -217,7 +222,7 @@
       series: [
         { name: "成交", type: "line", data: price, showSymbol: false, connectNulls: true, emphasis: { disabled: true },
           // 線段顏色：昨收以上紅、以下綠（以線條本身的最高～最低範圍換算切換位置）
-          lineStyle: { width: 1.4, color: lineColor(hi, lo, prev, up, down) },
+          lineStyle: { width: 1.4, color: lineColor(Math.max(...j.rows.map((r) => r[1])), Math.min(...j.rows.map((r) => r[1])), prev, up, down) },
           markLine: { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: css("--muted"), type: "solid", width: 1 }, data: [{ yAxis: prev }] },
           // 最高價、最低價標註（方框）
           markPoint: { silent: true, symbol: "circle", symbolSize: 5, animation: false,
@@ -301,9 +306,11 @@
         busy = true;
         try {
           const [j, o, q] = await Promise.all([App.live({ t: "intraday", s: sym }, 2),
-            App.live({ t: "ohlc", m: "TSE" }, 2).catch(() => null), App.twQuotes(["tse_t00.tw"]).catch(() => null)]);
+            App.live({ t: "ohlc", m: "TSE" }, 2).catch(() => null), App.twQuotes(["tse_t00.tw", `${s.market}_${code}.tw`]).catch(() => null)]);
           let idx = null;
           const t00 = q && (q.rows || []).find((r) => r.c === "t00");
+          const me = q && (q.rows || []).find((r) => r.c === code);
+          if (me && j && j.day && me.d === j.day.replace(/-/g, "")) { j.dayHigh = parseFloat(me.h) || null; j.dayLow = parseFloat(me.l) || null; }
           const prevIdx = t00 && parseFloat(t00.y);
           if (o && o.rows && j && j.day && String(o.key || "").endsWith(j.day.replace(/-/g, "")) && prevIdx) {
             idx = { prev: prevIdx, rows: o.rows.map((r) => [`${r[0].slice(0, 2)}:${r[0].slice(2, 4)}`, parseFloat(r[1])]),
