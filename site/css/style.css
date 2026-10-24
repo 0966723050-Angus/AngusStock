@@ -886,3 +886,6 @@ html { background: linear-gradient(to bottom, var(--bar-grad) 0 50%, var(--bg) 5
 body { background: transparent; }
 #app, #login, #lock { position: relative; }
 #app { background-color: var(--bg); }
+/* 標題欄改為固定在畫面頂端（iOS 主畫面 App 會延伸固定標題欄的顏色到狀態列，不再套用霧狀淡化） */
+.topbar { position: fixed; top: 0; left: 0; right: 0; }
+#app { padding-top: calc(52px + env(safe-area-inset-top)); }
