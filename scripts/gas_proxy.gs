@@ -5,6 +5,7 @@
  * 只允許下列查詢，不能當成一般用途的中轉站（另含定時觸發 GitHub 更新，見檔案最後）：
  *   ?t=mis&ex_ch=tse_2330.tw|otc_6488.tw|tse_t00.tw   證交所 MIS 即時報價（上市、上櫃、指數）
  *   ?t=tw&s=2330.TW,6488.TWO,^TWII,^TWOII                Yahoo 奇摩股市即時報價（備援；格式同 mis）
+ *   ?t=intraday&s=2313.TW                               Yahoo 奇摩股市個股當日每分鐘走勢（上市 .TW／上櫃 .TWO）
  *   ?t=ohlc&m=TSE                                       證交所 MIS 大盤盤中每分鐘走勢（TSE＝加權、OTC＝櫃買）
  *   ?t=taifex&mt=0                                      期交所台指期即時報價（0＝日盤、1＝夜盤）
  *   ?t=yahoo&s=^DJI,^SOX,GC=F                           Yahoo Finance 國際行情
@@ -22,6 +23,7 @@ function doGet(e) {
     if (p.t === 'mis') out = mis(p.ex_ch);
     else if (p.t === 'tw') out = tw(p.s);
     else if (p.t === 'ohlc') out = ohlc(p.m);
+    else if (p.t === 'intraday') out = intraday(p.s);
     else if (p.t === 'taifex') out = taifex(p.mt);
     else if (p.t === 'yahoo') out = yahoo(p.s);
     else out = { error: 'unknown type' };
@@ -94,6 +96,21 @@ function tw(s) {
     } catch (err) { /* 略過 */ }
   });
   return { rows: rows };
+}
+
+// 個股當日每分鐘走勢：rows＝[[時間 HH:MM, 收盤, 成交量(張)]]
+function intraday(s) {
+  if (!s || !/^[0-9A-Z]{4,6}\.(TW|TWO)$/.test(s)) return { error: 'bad symbol' };
+  var r = fetchRetry({ url: 'https://tw.stock.yahoo.com/_td-stock/api/resource/FinanceChartService.ApacLibraCharts;symbols=' +
+    encodeURIComponent('["' + s + '"]') + ';type=tick', headers: { 'User-Agent': UA } });
+  var c = JSON.parse(r.getContentText())[0].chart, m = c.meta || {}, q = (c.indicators.quote || [{}])[0], rows = [];
+  (c.timestamp || []).forEach(function (t, i) {
+    if (q.close[i] == null) return;
+    var d = new Date(t * 1000 + 8 * 3600e3);
+    rows.push([('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2), q.close[i], q.volume[i] || 0]);
+  });
+  var day = m.regularMarketTime ? new Date(m.regularMarketTime * 1000 + 8 * 3600e3).toISOString().slice(0, 10) : '';
+  return { sym: s, day: day, price: m.regularMarketPrice, prev: m.previousClose, up: m.limitUpPrice, down: m.limitDownPrice, rows: rows };
 }
 
 // 期交所：台指期（日盤／夜盤）全部月份，近月由網頁端判斷

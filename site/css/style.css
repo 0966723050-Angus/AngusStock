@@ -889,3 +889,18 @@ body { background: transparent; }
 /* 標題欄改為固定在畫面頂端（iOS 主畫面 App 會延伸固定標題欄的顏色到狀態列，不再套用霧狀淡化） */
 .topbar { position: fixed; top: 0; left: 0; right: 0; }
 #app { padding-top: calc(52px + env(safe-area-inset-top)); }
+
+/* 個股資訊：即時走勢 */
+.live-card { margin-bottom: 14px; }
+.live-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 12px 16px 4px; flex-wrap: wrap; }
+.live-px { display: flex; flex-direction: column; gap: 2px; }
+.live-price { font-size: 30px; font-weight: 800; line-height: 1.1; }
+.live-chg { font-size: 15px; font-weight: 700; }
+.live-kv { display: grid; grid-template-columns: repeat(2, auto); gap: 4px 18px; margin: 0; font-size: 13px; }
+.live-kv div { display: flex; gap: 8px; justify-content: space-between; }
+.live-kv dt { color: var(--muted); }
+.live-kv dd { margin: 0; font-weight: 600; text-align: right; }
+.live-sub { display: flex; justify-content: space-between; padding: 2px 16px 0; }
+.live-sub .lg-dot { width: 12px; height: 3px; vertical-align: middle; }
+.live-chart { height: 300px; }
+@media (max-width: 420px) { .live-price { font-size: 26px; } .live-kv { gap: 3px 12px; font-size: 12.5px; } .live-chart { height: 260px; } }

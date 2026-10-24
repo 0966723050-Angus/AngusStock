@@ -133,6 +133,88 @@
     });
   }
 
+  // ------------------------------------------------------------ 即時走勢（當日每分鐘；經 Apps Script 查 Yahoo 奇摩股市）
+  const TIMES = (() => { const a = []; for (let m = 9 * 60; m <= 13 * 60 + 30; m++) a.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`); return a; })();
+  function liveCard() {
+    return `
+      <article class="card live-card">
+        <div class="live-head">
+          <div class="live-px"><b class="live-price">--</b><span class="live-chg"></span></div>
+          <dl class="live-kv">
+            <div><dt>總量</dt><dd class="lv-vol">--</dd></div><div><dt>成交值</dt><dd class="lv-val">--</dd></div>
+            <div><dt>均價</dt><dd class="lv-avg">--</dd></div><div><dt>昨收</dt><dd class="lv-prev">--</dd></div>
+          </dl>
+        </div>
+        <div class="live-sub muted small"><span class="lv-time">即時走勢載入中…</span><span><i class="lg-dot" style="background:#f0a020"></i> 均價線</span></div>
+        <div class="chart live-chart"></div>
+      </article>`;
+  }
+  function lineColor(hi, lo, prev, up, down) {
+    if (prev >= hi) return down;
+    if (prev <= lo) return up;
+    const k = (hi - prev) / (hi - lo);
+    return new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: up }, { offset: k, color: up }, { offset: k, color: down }, { offset: 1, color: down }]);
+  }
+  function drawLive(view, j) {
+    const el = view.querySelector(".live-chart");
+    if (!el || !j || !j.rows || !j.rows.length) {
+      const t = view.querySelector(".lv-time");
+      if (t) t.textContent = "目前沒有當日走勢資料";
+      return;
+    }
+    const prev = j.prev, up = css("--up"), down = css("--down");
+    const map = new Map(j.rows.map((r) => [r[0], r]));
+    let cv = 0, cq = 0;
+    const price = [], avg = [], vol = [];
+    for (const t of TIMES) {
+      const r = map.get(t);
+      if (r) { cv += r[1] * r[2]; cq += r[2]; }
+      price.push(r ? r[1] : null);
+      avg.push(r && cq ? +(cv / cq).toFixed(2) : null);
+      vol.push(r ? r[2] : null);
+    }
+    const last = j.rows[j.rows.length - 1], px = j.price ?? last[1], chg = prev != null ? px - prev : null;
+    const hi = Math.max(...j.rows.map((r) => r[1])), lo = Math.min(...j.rows.map((r) => r[1]));
+    // 價格軸以昨收為中心上下對稱，刻度一定包含昨收（藍色）
+    const span = Math.max(hi - prev, prev - lo, prev * 0.005) * 1.06;
+    const ymax = prev + span, ymin = prev - span;
+    const cls2 = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
+    const set = (q, html) => { const e = view.querySelector(q); if (e) e.innerHTML = html; };
+    set(".live-price", fmt(px));
+    view.querySelector(".live-price").className = "live-price " + cls2(chg);
+    set(".live-chg", chg == null ? "" : `<span class="${cls2(chg)}">${chg > 0 ? "▲" : chg < 0 ? "▼" : ""}${fmt(Math.abs(chg))}　${chg >= 0 ? "+" : ""}${fmt(chg / prev * 100)}%</span>`);
+    set(".lv-vol", `${cq.toLocaleString("zh-TW")} 張`);
+    set(".lv-val", `${(cv * 1000 / 1e8).toFixed(1)} 億`);
+    set(".lv-avg", cq ? fmt(cv / cq) : "--");
+    set(".lv-prev", fmt(prev));
+    set(".lv-time", `${j.day ? j.day.replace(/-/g, "/") : ""} ${last[0]}（即時）`);
+    const old = echarts.getInstanceByDom(el);
+    const c = old || echarts.init(el);
+    if (!old) charts.push(c);
+    const tick = (v) => (v > prev + span * 0.01 ? up : v < prev - span * 0.01 ? down : "#2a5bd7");
+    c.setOption({
+      animation: false,
+      grid: { left: 54, right: 12, top: 10, bottom: 24 },
+      tooltip: { trigger: "axis", showContent: false, axisPointer: { type: "line", lineStyle: { color: css("--muted"), type: "dashed" } } },
+      xAxis: { type: "category", data: TIMES, boundaryGap: false, axisTick: { show: false }, axisLine: { lineStyle: { color: css("--border") } },
+        axisLabel: { color: css("--muted"), fontSize: 11, interval: (i, v) => /:00$/.test(v), formatter: (v) => v.slice(0, 2) } },
+      yAxis: [
+        { type: "value", min: ymin, max: ymax, interval: span / 3, position: "left",
+          axisLabel: { fontSize: 11, formatter: (v) => fmt(v, v >= 100 ? 1 : 2), color: (v) => tick(v) },
+          splitLine: { lineStyle: { color: css("--grid") } } },
+        { type: "value", min: 0, max: Math.max(...vol.filter((v) => v != null), 1) * 3.2, show: false },
+      ],
+      series: [
+        { name: "成交", type: "line", data: price, showSymbol: false, connectNulls: true, emphasis: { disabled: true },
+          // 線段顏色：昨收以上紅、以下綠（以線條本身的最高～最低範圍換算切換位置）
+          lineStyle: { width: 1.4, color: lineColor(hi, lo, prev, up, down) },
+          markLine: { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: css("--muted"), type: "solid", width: 1 }, data: [{ yAxis: prev }] } },
+        { name: "均價", type: "line", data: avg, showSymbol: false, connectNulls: true, lineStyle: { width: 1.2, color: "#f0a020" }, itemStyle: { color: "#f0a020" }, emphasis: { disabled: true } },
+        { name: "量", type: "bar", yAxisIndex: 1, data: vol, barWidth: "60%", itemStyle: { color: "rgba(80,170,220,.55)" }, silent: true },
+      ],
+    });
+  }
+
   async function render(view, params) {
     while (charts.length) charts.pop().dispose();
     const code = (params.get("code") || "").toUpperCase();
@@ -166,6 +248,7 @@
     App.setUpdated(data.updated);
     document.title = `${s.name} ${code}｜Angus 股市`;
     view.innerHTML = nav + `
+      ${s.market === "tse" || s.market === "otc" ? liveCard() : ""}
       <div class="stock-grid">
         ${infoCard(s, code)}
         <div class="stock-charts">
@@ -189,6 +272,20 @@
       if (s.chart.length) drawChart(el, s.chart, SERIES[+el.dataset.k]);
       else el.outerHTML = '<div class="empty">尚無買賣超歷史資料</div>';
     });
+    // 即時走勢：開啟時載入一次（收盤後顯示最後交易日），交易時間每 30 秒更新
+    if ((s.market === "tse" || s.market === "otc") && await App.hasLive()) {
+      const sym = `${code}.${s.market === "otc" ? "TWO" : "TW"}`;
+      let busy = false;
+      const load = async () => {
+        if (busy || !view.isConnected) return;
+        busy = true;
+        try { drawLive(view, await App.live({ t: "intraday", s: sym }, 2)); }
+        catch (e) { const t = view.querySelector(".lv-time"); if (t && t.textContent.includes("載入中")) t.textContent = "即時走勢暫時無法取得"; }
+        finally { busy = false; }
+      };
+      load();
+      const timer = setInterval(() => { if (!view.isConnected) clearInterval(timer); else if (!document.hidden && App.marketOpen()) load(); }, 30000);
+    }
   }
 
   window.addEventListener("resize", () => charts.forEach((c) => c.resize()));
