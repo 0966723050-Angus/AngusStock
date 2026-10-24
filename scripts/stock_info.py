@@ -353,7 +353,7 @@ def build_stocks(key, items, quote_rows, trading_days, refresh_fund):
         out[code] = {
             "name": name, "market": mkt, "industry": fd.get("industry"), "date": qdate,
             "price": price, "chg": chg, "chg_pct": pct(chg, prev),
-            "vol": vol, "vol_chg": round((vol / prev_vol - 1) * 100, 1) if vol and prev_vol else None,
+            "vol": vol, "prev_vol": prev_vol, "vol_chg": round((vol / prev_vol - 1) * 100, 1) if vol and prev_vol else None,
             "turnover": pct((vol or 0) * 1000, fd.get("shares")) if vol is not None else None,
             **{k: fd.get(k) for k in ("holders", "holders_date", "directors_pct", "foreign_pct", "eps_q", "eps_y",
                                       "eps_period", "pe", "pb", "rev_ym", "rev_mom", "rev_yoy", "div_period",

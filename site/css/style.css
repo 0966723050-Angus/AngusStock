@@ -906,3 +906,11 @@ body { background: transparent; }
 @media (max-width: 420px) { .live-price { font-size: 26px; } .live-kv { gap: 3px 12px; font-size: 12.5px; } .live-chart { height: 260px; } }
 .lv-legend { display: inline-flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .live-sub { flex-wrap: wrap; gap: 2px 10px; } .lv-time { white-space: nowrap; }
+
+/* 內／外盤比例 */
+.io-bar { padding: 6px 16px 14px; }
+.io-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+.io-num { font-size: 15px; color: inherit; } .io-num b { font-weight: 700; }
+.io-track { display: flex; gap: 3px; height: 8px; margin-top: 4px; }
+.io-track i { display: block; flex: 1 1 0; min-width: 2px; border-radius: 4px; }
+.io-in-bar { background: var(--down); } .io-out-bar { background: var(--up); }

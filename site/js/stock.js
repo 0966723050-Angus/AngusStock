@@ -14,6 +14,8 @@
     return `<tr class="${opt.band || ""}"><th scope="row">${label}</th><td class="${opt.cls || ""}">${value}</td></tr>`;
   }
 
+  const volRatio = (v, pv) => (v == null || !pv ? "--" : `<span class="${v > pv ? "hl" : ""}">${fmt(v / pv, 2)} 倍</span>`);
+
   function infoCard(s, code) {
     const price = s.price;
     const pd = price != null && price >= 1000 && price % 1 === 0 ? 0 : 2;
@@ -32,6 +34,8 @@
           ${row("漲跌", s.chg == null ? "--" : `${s.chg > 0 ? "▲" : s.chg < 0 ? "▼" : ""}${fmt(Math.abs(s.chg), pd === 0 && s.chg % 1 === 0 ? 0 : 2)}`, { cls: cls(s.chg) })}
           ${row("漲跌幅", s.chg_pct == null ? "--" : sgn(s.chg_pct) + "%", { band: "b1", cls: cls(s.chg_pct) })}
           ${row("量增幅", s.vol_chg == null ? "--" : sgn(s.vol_chg, 1) + "%", { cls: s.vol_chg > 0 ? "hl" : "" })}
+          ${row("昨日成交量", `<span class="si-yvol">${s.prev_vol == null ? "--" : fmt(s.prev_vol, 0) + " 張"}</span>`, { band: "b1" })}
+          ${row("量比（今日／昨日）", `<span class="si-vr">${volRatio(s.vol, s.prev_vol)}</span>`)}
           ${row("周轉率(%)", num(s.turnover), { band: "b1" })}
           ${row(`<a href="${tdcc}" target="_blank" rel="noopener">集保人數</a>`, holders + (s.holders_date ? `<small>${esc(s.holders_date.slice(5).replace("-", "/"))}</small>` : ""))}
           ${row("董監持股(%)", num(s.directors_pct), { band: "b2" })}
@@ -147,6 +151,11 @@
         </div>
         <div class="live-sub muted small"><span class="lv-time">即時走勢載入中…</span><span class="lv-legend"><span><i class="lg-dot" style="background:#f0a020"></i> 均價</span><span class="lv-idx"><i class="lg-dot" style="background:#9b51e0"></i> 加權指數</span></span></div>
         <div class="chart live-chart"></div>
+        <div class="io-bar" hidden>
+          <div class="io-row"><span>內盤</span><span>外盤</span></div>
+          <div class="io-row io-num"><span class="down io-in"></span><span class="up io-out"></span></div>
+          <div class="io-track"><i class="io-in-bar"></i><i class="io-out-bar"></i></div>
+        </div>
       </article>`;
   }
   function lineColor(hi, lo, prev, up, down) {
@@ -240,6 +249,28 @@
     });
   }
 
+  // 即時成交量更新「昨日成交量」「量比」：即時報價日期比網站資料新時，網站資料的當日量就是昨日量
+  function volLive(view, s, me, yq) {
+    if (!me || !me.d || !parseFloat(me.v)) return;
+    const sd = String(s.date || "").replace(/-/g, "");
+    if (me.d < sd) return;
+    const pv = yq && yq.d === me.d && yq.pv ? yq.pv : me.d > sd ? s.vol : s.prev_vol;
+    const a = view.querySelector(".si-yvol"), b = view.querySelector(".si-vr");
+    if (a) a.textContent = pv == null ? "--" : fmt(pv, 0) + " 張";
+    if (b) b.innerHTML = volRatio(parseFloat(me.v), pv);
+  }
+  // 內／外盤（Yahoo 奇摩股市；以委賣價成交為外盤、委買價成交為內盤）
+  function inOut(view, yq) {
+    const box = view.querySelector(".io-bar");
+    if (!box || !yq || yq.inM == null || yq.outM == null || !(yq.inM + yq.outM)) return;
+    const tot = yq.inM + yq.outM, pi = (yq.inM / tot) * 100;
+    box.querySelector(".io-in").innerHTML = `<b>${fmt(yq.inM, 0)}</b>(${fmt(pi)}%)`;
+    box.querySelector(".io-out").innerHTML = `<b>${fmt(yq.outM, 0)}</b>(${fmt(100 - pi)}%)`;
+    box.querySelector(".io-in-bar").style.flexGrow = yq.inM;
+    box.querySelector(".io-out-bar").style.flexGrow = yq.outM;
+    box.hidden = false;
+  }
+
   async function render(view, params) {
     while (charts.length) charts.pop().dispose();
     const code = (params.get("code") || "").toUpperCase();
@@ -290,7 +321,7 @@
             </article>`).join("") : ""}
         </div>
       </div>
-      <p class="muted small note">資料時間 ${esc(data.updated)}。投信、自營商持股比率官方未公布；EPS(Y) 為近四季合計；量增幅為與前一交易日成交量比較；買賣超與累積買賣超期間為最新資料日往前 6 個月。</p>`;
+      <p class="muted small note">資料時間 ${esc(data.updated)}。投信、自營商持股比率官方未公布；EPS(Y) 為近四季合計；量增幅與量比為與前一交易日成交量比較；內／外盤來源為 Yahoo 奇摩股市；買賣超與累積買賣超期間為最新資料日往前 6 個月。</p>`;
     const majorRows = (s.major || []).map((r) => [r[0], r[1], null, null, r[2]]);
     view.querySelectorAll(".inst-chart[data-m]").forEach((el) => drawChart(el, majorRows, MAJOR[+el.dataset.m]));
     view.querySelectorAll(".inst-chart[data-k]").forEach((el) => {
@@ -305,8 +336,10 @@
         if (busy || !view.isConnected) return;
         busy = true;
         try {
-          const [j, o, q] = await Promise.all([App.live({ t: "intraday", s: sym }, 2),
-            App.live({ t: "ohlc", m: "TSE" }, 2).catch(() => null), App.twQuotes(["tse_t00.tw", `${s.market}_${code}.tw`]).catch(() => null)]);
+          const [j, o, q, y] = await Promise.all([App.live({ t: "intraday", s: sym }, 2),
+            App.live({ t: "ohlc", m: "TSE" }, 2).catch(() => null), App.twQuotes(["tse_t00.tw", `${s.market}_${code}.tw`]).catch(() => null),
+            App.live({ t: "tw", s: sym }, 1).catch(() => null)]);
+          const yq = y && (y.rows || []).find((r) => r.c === code);
           let idx = null;
           const t00 = q && (q.rows || []).find((r) => r.c === "t00");
           const me = q && (q.rows || []).find((r) => r.c === code);
@@ -317,6 +350,8 @@
               now: t00.d === j.day.replace(/-/g, "") ? parseFloat(t00.z) || null : null }; // 最新／收盤指數
           }
           drawLive(view, j, idx);
+          volLive(view, s, me || yq, yq);
+          inOut(view, yq);
         }
         catch (e) { const t = view.querySelector(".lv-time"); if (t && t.textContent.includes("載入中")) t.textContent = "即時走勢暫時無法取得"; }
         finally { busy = false; }

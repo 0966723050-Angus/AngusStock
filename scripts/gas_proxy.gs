@@ -73,7 +73,7 @@ function mis(exch) {
   return { rows: rows };
 }
 
-// Yahoo 奇摩股市即時報價（證交所 MIS 連線不穩時的備援）；回傳欄位與 mis 相同（v 為張數）
+// Yahoo 奇摩股市即時報價（證交所 MIS 連線不穩時的備援）；回傳欄位與 mis 相同（v 為張數），另含 inM 內盤、outM 外盤、pv 昨日成交量（張）
 function tw(s) {
   if (!s || !/^[\^A-Za-z0-9.,]+$/.test(s)) return { error: 'bad symbols' };
   var syms = s.split(',').slice(0, 300), reqs = [], rows = [];
@@ -91,7 +91,8 @@ function tw(s) {
         var t = x.regularMarketTime ? new Date(new Date(x.regularMarketTime).getTime() + 8 * 3600e3).toISOString() : '';
         rows.push({ c: code, z: raw(x.price), y: raw(x.regularMarketPreviousClose), o: raw(x.regularMarketOpen), h: raw(x.regularMarketDayHigh),
           l: raw(x.regularMarketDayLow), v: x.volume ? String(Math.round(Number(x.volume) / 1000)) : null,
-          d: t.slice(0, 10).replace(/-/g, ''), t: t.slice(11, 19), src: 'yahoo' });
+          d: t.slice(0, 10).replace(/-/g, ''), t: t.slice(11, 19), src: 'yahoo',
+          inM: x.inMarket != null ? x.inMarket : null, outM: x.outMarket != null ? x.outMarket : null, pv: x.previousVolumeK != null ? x.previousVolumeK : null });
       });
     } catch (err) { /* 略過 */ }
   });
