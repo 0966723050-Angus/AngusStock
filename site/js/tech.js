@@ -4,7 +4,10 @@
 
   const GROUP = "ta";
   const OPT_KEY = "angus.ta.overlays";
-  const DEFAULT_SPAN = () => (window.innerWidth < 700 ? 60 : 125); // 手機約 3 個月、桌機約半年
+  const PER_KEY = "angus.ta.period";
+  const PERIODS = [["d", "日K"], ["w", "週K"], ["m", "月K"]];
+  // 預設顯示根數：日 K 手機約 3 個月、桌機約半年；週 K 約 1～2 年；月 K 約 4～5 年
+  const DEFAULT_SPAN = (per) => (window.innerWidth < 700 ? { d: 60, w: 52, m: 48 } : { d: 125, w: 104, m: 60 })[per || "d"];
   const charts = [];
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const fmt = (v, d = 2) => (v == null || !isFinite(v) ? "--" : Number(v).toLocaleString("zh-TW", { minimumFractionDigits: d, maximumFractionDigits: d }));
@@ -155,17 +158,78 @@
   // 繪製用：{ ia, pa, ib?, pb?, levels: [[比例, 價格]] }（以目前資料的索引表示）
   function fibPlan(t, line, ratios) {
     if (!line || !line.a) return null;
-    const ia = t.d.indexOf(line.a.d);
+    // 週／月 K：找日期所在的那一根（各根日期為該期最後交易日）
+    const at = (d) => t.d.findIndex((x) => x >= d);
+    const ia = at(line.a.d);
     if (ia < 0) return null;
     const out = { ia, pa: line.a.p };
     if (line.b) {
-      const ib = t.d.indexOf(line.b.d);
+      const ib = at(line.b.d);
       if (ib < 0) return null;
       Object.assign(out, { ib, pb: line.b.p });
       out.levels = [0, ...ratios].map((r) => [r, line.b.p - (line.b.p - line.a.p) * r / 100]);
     }
     return out;
   }
+
+  // ------------------------------------------------------------ 週 K／月 K
+  // 日 K 依週（週一起算）或月合併：日期標為該期最後交易日；漲跌（期貨）為各日漲跌合計
+  const iso = (dt) => dt.toISOString().slice(0, 10);
+  const weekKey = (d) => { const x = new Date(d + "T00:00:00Z"); x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7)); return iso(x); };
+  const perKey = (per, d) => (per === "w" ? weekKey(d) : d.slice(0, 7));
+  function aggregate(rows, per) {
+    const out = [];
+    let cur = null;
+    for (const r of rows) {
+      const k = perKey(per, r[0]);
+      if (!cur || cur.k !== k) {
+        cur = { k, r: [r[0], r[1], r[2], r[3], r[4], r[5], r[6]] };
+        out.push(cur);
+      } else {
+        const a = cur.r;
+        a[0] = r[0]; a[2] = Math.max(a[2], r[2]); a[3] = Math.min(a[3], r[3]); a[4] = r[4];
+        a[5] = a[5] == null || r[5] == null ? null : +(a[5] + r[5]).toFixed(2);
+        a[6] = a[6] == null || r[6] == null ? null : +(a[6] + r[6]).toFixed(2);
+      }
+    }
+    return out;
+  }
+  // 較早的週／月 K 由 Yahoo Finance 補齊（經 Apps Script；同一工作階段快取 6 小時）
+  async function history(code, meta, per) {
+    const sym = code === "t00" ? "^TWII" : code === "o00" ? "^TWOII"
+      : meta.market === "tse" ? `${code}.TW` : meta.market === "otc" ? `${code}.TWO` : null;
+    if (!sym || !(await App.hasLive())) return [];
+    const key = `angus.ta.k.${sym}.${per}`;
+    try {
+      const hit = JSON.parse(sessionStorage.getItem(key) || "null");
+      if (hit && Date.now() - hit.t < 6 * 3600e3) return hit.rows;
+    } catch (e) { /* ignore */ }
+    const j = await App.live({ t: "kline", s: sym, i: per === "w" ? "1wk" : "1mo" }, 2);
+    const r2 = (v) => (v == null ? null : Math.round(v * 100) / 100);
+    const idx = meta.market === "idx";
+    const rows = (j.rows || []).map((r) => [r[0], r2(r[1]), r2(r[2]), r2(r[3]), r2(r[4]), idx || r[5] == null ? null : Math.round(r[5] / 1000)]);
+    try { sessionStorage.setItem(key, JSON.stringify({ t: Date.now(), rows })); } catch (e) { /* ignore */ }
+    return rows;
+  }
+  async function periodRows(rows, code, meta, per) {
+    const local = aggregate(rows, per);
+    if (!local.length) return { rows: [], note: "" };
+    let older = [];
+    try { older = await history(code, meta, per); } catch (e) { /* 舊版中轉程式或連線失敗：只用網站資料 */ }
+    const first = local[0].k;
+    // 網站資料的第一期可能不完整（資料由期中開始），有 Yahoo 資料時改用 Yahoo 的該期
+    const old = older.filter((r) => perKey(per, r[0]) <= first && r[4] != null).map((r) => {
+      const k = perKey(per, r[0]), d = new Date(k + (per === "w" ? "" : "-01") + "T00:00:00Z");
+      if (per === "w") d.setUTCDate(d.getUTCDate() + 4); else { d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0); }
+      return { k, r: [iso(d), r[1], r[2], r[3], r[4], r[5], null] };
+    });
+    const ks = new Set(old.map((x) => x.k));
+    const merged = old.concat(local.filter((x) => !ks.has(x.k)));
+    const name = PERIODS.find((p) => p[0] === per)[1];
+    return { rows: merged.map((x) => x.r), note: `${name} ${merged.length} 根` + (old.length ? "（較早資料來源：Yahoo Finance）" : "") };
+  }
+  // 日期顯示：月 K 只顯示年月
+  const dLabel = (t, d) => (t.per === "m" ? d.slice(0, 7) : d);
 
   function loadOverlays() {
     const def = Object.fromEntries(LINES.map((x) => [x.key, x.key !== "vp"])); // 成交量分佈預設不顯示
@@ -189,7 +253,7 @@
   const xCat = (t, P, gridIndex = 0, show = true) => ({
     type: "category", data: t.d, gridIndex, boundaryGap: true, axisTick: { show: false },
     axisLine: { lineStyle: { color: P.border } },
-    axisLabel: show ? { color: P.text, fontSize: 10, formatter: (v) => `${+v.slice(5, 7)}/${+v.slice(8)}` } : { show: false },
+    axisLabel: show ? { color: P.text, fontSize: 10, formatter: (v) => (t.per === "m" ? `${v.slice(2, 4)}/${+v.slice(5, 7)}` : `${+v.slice(5, 7)}/${+v.slice(8)}`) } : { show: false },
   });
   const yVal = (P, extra = {}) => ({ type: "value", scale: true, position: "right", splitNumber: 4,
     axisLabel: { color: P.text, fontSize: 10 }, splitLine: { lineStyle: { color: P.grid } }, ...extra });
@@ -289,7 +353,7 @@
       const pct = t.useChg && t.chg[i] != null ? (t.chg[i] / (t.c[i] - t.chg[i])) * 100
         : i > 0 ? ((t.c[i] - t.c[i - 1]) / t.c[i - 1]) * 100 : null;
       const pc = pct == null ? "" : pct >= 0 ? "up" : "down";
-      return `<span class="ti-date">${t.d[i]}</span>` +
+      return `<span class="ti-date">${dLabel(t, t.d[i])}</span>` +
         `<span class="ti">開 <b>${fmt(t.o[i])}</b></span><span class="ti">高 <b>${fmt(t.h[i])}</b></span>` +
         `<span class="ti">低 <b>${fmt(t.l[i])}</b></span><span class="ti">收 <b class="${pc}">${fmt(t.c[i])}</b>` +
         (pct == null ? "" : ` <b class="${pc}">${pct >= 0 ? "+" : ""}${fmt(pct)}%</b>`) + `</span>` +
@@ -311,7 +375,7 @@
       series: series.concat(marks ? [{ type: "line", data: [], markLine: { silent: true, symbol: "none", label: { show: false }, data: marks } }] : []),
       tooltip: { trigger: "axis", showContent: false, axisPointer: { type: "line" } },
     }));
-    c.__info = (i) => `<span class="ti-date">${t.d[i]}</span>` + chips(series, i);
+    c.__info = (i) => `<span class="ti-date">${dLabel(t, t.d[i])}</span>` + chips(series, i);
     return c;
   }
   // 資訊列中每個數列的「色塊＋名稱＋數值」
@@ -327,12 +391,13 @@
   const hline = (y, color, type = "dotted", width = 2) => ({ yAxis: y, lineStyle: { color, type, width } });
 
   // ------------------------------------------------------------ 左側指標表
-  function panel(t, meta) {
+  // day：日 K 指標（52 週最高／最低一律以日 K 計算）
+  function panel(t, meta, day) {
     const i = t.d.length - 1, p = i - 1;
     const b = t.boll, pos = b.sd[i] ? ((t.c[i] - b.mid[i]) / (b.up[i] - b.mid[i])) * 100 : null;
     const bbw = b.lo[i] ? ((b.up[i] - b.lo[i]) / b.lo[i]) * 100 : null;
-    const n250 = Math.max(0, i - 249);
-    const hi52 = Math.max(...t.h.slice(n250)), lo52 = Math.min(...t.l.slice(n250));
+    const n250 = Math.max(0, day.d.length - 250);
+    const hi52 = Math.max(...day.h.slice(n250)), lo52 = Math.min(...day.l.slice(n250));
     const turnover = meta.shares && meta.market !== "idx" ? (t.v[i] * 1000 / meta.shares) * 100 : null;
     const r = (label, cls, a, bb = "", c2 = "") => `<tr><th class="${cls}">${label}</th><td class="${c2}">${a}</td><td>${bb}</td></tr>`;
     const sg = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
@@ -342,7 +407,7 @@
     const posTxt = pos == null ? "" : `<b class="${sg(pos)}">${fmt(pos, 0)}%</b>`;
     return `
       <table class="ta-tbl">
-        <thead><tr><th class="ta-date">${esc(t.d[i])}</th><th>今日</th><th>前日</th></tr></thead>
+        <thead><tr><th class="ta-date">${esc(dLabel(t, t.d[i]))}</th><th>${{ d: "今日", w: "本週", m: "本月" }[t.per]}</th><th>${{ d: "前日", w: "上週", m: "上月" }[t.per]}</th></tr></thead>
         <tbody>
           ${sorted([item(t.macd.dif[i], "MACD-快", "m1", "", sg(t.macd.dif[i])), item(t.macd.sig[i], "MACD-慢", "m2", "", sg(t.macd.sig[i]))])}
           ${r("柱狀體", "m3", fmt(t.macd.hist[i]), fmt(t.macd.hist[p]))}
@@ -379,7 +444,9 @@
     return esc(n);
   }
 
+  let renderSeq = 0; // 連續切換（週期、股票）時，只保留最後一次的繪製
   async function render(view, params) {
+    const seq = ++renderSeq;
     while (charts.length) charts.pop().dispose();
     echarts.disconnect(GROUP);
     const [data, wl] = await Promise.all([App.loadData("ohlc"), App.loadData("watchlist").catch(() => null)]);
@@ -414,9 +481,19 @@
         ? "期交所近月連續日K（夜盤；日期為夜盤開始日，漲跌與前一結算價比較）"
         : "期交所近月連續日K（日盤；漲跌與前一結算價比較）";
     }
-    const t = compute(rows);
+    let per = "d";
+    try { per = localStorage.getItem(PER_KEY) || "d"; } catch (e) { /* ignore */ }
+    if (!PERIODS.some((p) => p[0] === per)) per = "d";
+    const day = compute(rows);
+    let t = day;
+    if (per !== "d") {
+      const pr = await periodRows(rows, code, meta, per);
+      if (pr.rows.length >= 2) { t = compute(pr.rows); liveNote = pr.note + (liveNote ? "；" + liveNote : ""); } else per = "d";
+    }
+    if (seq !== renderSeq || !view.isConnected) return;
+    t.per = per; day.per = "d";
     t.useChg = meta.market === "fut";
-    let span = Math.min(DEFAULT_SPAN(), t.d.length);
+    let span = Math.min(DEFAULT_SPAN(per), t.d.length);
     const ov = loadOverlays();
 
     const tech = document.createElement("a");
@@ -454,10 +531,11 @@
         <label class="ta-select"><span class="sr-only">選擇自選股</span>
           <select id="taStock">${list.map((c) => `<option value="${esc(c)}" ${c === code ? "selected" : ""}>${esc(data.stocks[c].name)}${c.length === 3 ? "" : " " + esc(c)}</option>`).join("")}</select>
         </label>
+        <span class="seg ta-per" role="group" aria-label="K 線週期">${PERIODS.map(([k, n]) => `<button type="button" data-per="${k}" aria-pressed="${k === per}">${n}</button>`).join("")}</span>
         <span class="muted small">${esc(liveNote)}</span>
       </div>
       <div class="ta-grid">
-        <aside class="card ta-panel"><div class="ta-name">${esc(meta.name)}</div>${panel(t, meta)}</aside>
+        <aside class="card ta-panel"><div class="ta-name">${esc(meta.name)}</div>${panel(t, meta, day)}</aside>
         <article class="card ta-main">
           <div class="ta-head">
             <span class="ta-badge">${badgeName(meta.name)}</span>
@@ -481,7 +559,7 @@
         ${[["MACD", "taMacd"], ["KD", "taKd"], ["J", "taJ"], ["RSI", "taRsi"], ["DMA", "taDma"], ["E-Ray Index", "taEray"]].map(([n, id]) => `
           <article class="card"><div class="chart-title"><span class="tag t1">${n}</span></div><div class="ta-info" data-id="${id}"></div><div class="chart ta-sub" id="${id}"></div></article>`).join("")}
       </div>
-      <p class="muted small note">K 線預設顯示近 3 個月（手機）／半年（電腦）；點選圖表可在上方資訊列查看該日數值，可用 ＋／－ 或下方拖曳條調整區間（所有圖表同步）。EMA 週期 13；布林 20 日 ±2 標準差；KD 9 日；RSI 6／12 日；DMA 為 SMA20 向後位移 5 日，AMA = 收盤 − DMA；E-Ray 為 Elder Ray（最高／最低價 − EMA13）。</p>`;
+      <p class="muted small note">K 線可切換日K／週K／月K（週 K 以週一起算，各根日期為該期最後交易日；所有指標依所選週期計算，52 週最高／最低一律以日 K 計算）。日 K 預設顯示近 3 個月（手機）／半年（電腦）；點選圖表可在上方資訊列查看該日數值，可用 ＋／－ 或下方拖曳條調整區間（所有圖表同步）。EMA 週期 13；布林 20 日 ±2 標準差；KD 9 日；RSI 6／12 日；DMA 為 SMA20 向後位移 5 日，AMA = 收盤 − DMA；E-Ray 為 Elder Ray（最高／最低價 − EMA13）。</p>`;
 
     const kEl = view.querySelector("#taK");
     // 斐波那契：mode 0＝一般、1＝等待點選起點、2＝等待點選終點
@@ -590,6 +668,14 @@
     };
     draw();
 
+    // 切換週期：重新繪製整頁（指標依新週期重算）
+    view.querySelector(".ta-per").addEventListener("click", (e) => {
+      const k = e.target.closest("[data-per]")?.dataset.per;
+      if (!k || k === per) return;
+      try { localStorage.setItem(PER_KEY, k); } catch (err) { /* ignore */ }
+      view.querySelectorAll(".ta-per button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.per === k)));
+      render(view, params);
+    });
     view.querySelector("#taStock").addEventListener("change", (e) => { location.hash = `#/tech?code=${encodeURIComponent(e.target.value)}`; });
     const redrawK = () => {
       const cur = charts[0].getOption().dataZoom[0];

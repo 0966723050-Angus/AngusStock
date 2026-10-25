@@ -9,6 +9,7 @@
  *   ?t=ohlc&m=TSE                                       證交所 MIS 大盤盤中每分鐘走勢（TSE＝加權、OTC＝櫃買）
  *   ?t=taifex&mt=0                                      期交所台指期即時報價（0＝日盤、1＝夜盤）
  *   ?t=yahoo&s=^DJI,^SOX,GC=F                           Yahoo Finance 國際行情
+ *   ?t=kline&s=2313.TW&i=1wk                            Yahoo Finance 週 K（1wk，近 5 年）／月 K（1mo，近 10 年）歷史
  *
  * 部署：script.google.com → 新專案 → 貼上本檔 → 部署 → 新增部署作業 → 類型「網頁應用程式」
  *       執行身分：我　／　誰可以存取：所有人 → 部署 → 複製「網頁應用程式網址」
@@ -26,6 +27,7 @@ function doGet(e) {
     else if (p.t === 'intraday') out = intraday(p.s);
     else if (p.t === 'taifex') out = taifex(p.mt);
     else if (p.t === 'yahoo') out = yahoo(p.s);
+    else if (p.t === 'kline') out = kline(p.s, p.i);
     else out = { error: 'unknown type' };
   } catch (err) {
     out = { error: String(err) };
@@ -113,6 +115,20 @@ function intraday(s) {
   });
   var day = m.regularMarketTime ? new Date(m.regularMarketTime * 1000 + 8 * 3600e3).toISOString().slice(0, 10) : '';
   return { sym: s, day: day, price: m.regularMarketPrice, prev: m.previousClose, up: m.limitUpPrice, down: m.limitDownPrice, rows: rows };
+}
+
+// 週／月 K 歷史：rows＝[[期間起始日 YYYY-MM-DD, 開, 高, 低, 收, 成交量(股)]]
+function kline(s, iv) {
+  if (!s || !/^\^?[0-9A-Z]{2,6}(\.(TW|TWO))?$/.test(s)) return { error: 'bad symbol' };
+  var wk = iv !== '1mo';
+  var r = fetchRetry({ url: 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(s) + '?range=' + (wk ? '5y' : '10y') +
+    '&interval=' + (wk ? '1wk' : '1mo'), headers: { 'User-Agent': UA } });
+  var c = JSON.parse(r.getContentText()).chart.result[0], q = c.indicators.quote[0], rows = [];
+  (c.timestamp || []).forEach(function (t, i) {
+    if (q.close[i] == null || q.open[i] == null) return;
+    rows.push([new Date(t * 1000 + 8 * 3600e3).toISOString().slice(0, 10), q.open[i], q.high[i], q.low[i], q.close[i], q.volume[i]]);
+  });
+  return { sym: s, rows: rows };
 }
 
 // 期交所：台指期（日盤／夜盤）全部月份，近月由網頁端判斷

@@ -914,3 +914,7 @@ body { background: transparent; }
 .io-track { display: flex; gap: 3px; height: 8px; margin-top: 4px; }
 .io-track i { display: block; flex: 1 1 0; min-width: 2px; border-radius: 4px; }
 .io-in-bar { background: var(--down); } .io-out-bar { background: var(--up); }
+
+/* 技術分析：K 線週期切換 */
+.ta-per { padding: 0; flex: none; overflow: visible; }
+.ta-per button { padding: 5px 12px; }
