@@ -231,6 +231,21 @@
   // 日期顯示：月 K 只顯示年月
   const dLabel = (t, d) => (t.per === "m" ? d.slice(0, 7) : d);
 
+  // ------------------------------------------------------------ 乖離率（BIAS）＝（收盤 − 均線）÷ 均線 × 100%
+  // localStorage "angus.ta.bias"：{ ma: 5｜20｜50, range: { 5: 5, 20: 10, 50: 15 } }（range 為正負範圍 %）
+  const BIAS_KEY = "angus.ta.bias";
+  const BIAS_MA = [5, 20, 50];
+  const BIAS_DEF = { 5: 5, 20: 10, 50: 15 };
+  function biasLoad() {
+    try {
+      const v = JSON.parse(localStorage.getItem(BIAS_KEY) || "{}");
+      return { ma: BIAS_MA.includes(v.ma) ? v.ma : 20, range: { ...BIAS_DEF, ...(v.range || {}) } };
+    } catch (e) { return { ma: 20, range: { ...BIAS_DEF } }; }
+  }
+  const biasSave = (b) => { try { localStorage.setItem(BIAS_KEY, JSON.stringify(b)); } catch (e) { /* ignore */ } };
+  const bias = (t, n) => { const m = t[`ma${n}`]; return t.c.map((c, i) => (m[i] == null ? null : ((c - m[i]) / m[i]) * 100)); };
+  const perUnit = (t) => ({ d: "日", w: "週", m: "月" })[t.per || "d"];
+
   function loadOverlays() {
     const def = Object.fromEntries(LINES.map((x) => [x.key, x.key !== "vp"])); // 成交量分佈預設不顯示
     try { return { ...def, ...JSON.parse(localStorage.getItem(OPT_KEY) || "{}") }; } catch (e) { return def; }
@@ -431,6 +446,8 @@
           ${r("AMA", "w2", fmt(t.ama[i]), "", sg(t.ama[i]))}
           ${r("SAR", "w2", fmt(t.sarUp[i] ?? t.sarDn[i]), t.sarUp[i] != null ? '<b class="up">多</b>' : '<b class="down">空</b>')}
           ${r("周轉率", "w2", turnover == null ? "--" : fmt(turnover) + "%")}
+          <tr class="gap"><td colspan="3"></td></tr>
+          ${BIAS_MA.map((n) => { const b = bias(t, n); return r(`乖離率(${n})`, "w1", b[i] == null ? "--" : fmt(b[i]) + "%", b[p] == null ? "--" : fmt(b[p]) + "%", sg(b[i])); }).join("")}
         </tbody>
       </table>`;
   }
@@ -494,6 +511,7 @@
     t.per = per; day.per = "d";
     t.useChg = meta.market === "fut";
     let span = Math.min(DEFAULT_SPAN(per), t.d.length);
+    let biasCfg = biasLoad();
     const ov = loadOverlays();
 
     const tech = document.createElement("a");
@@ -558,8 +576,12 @@
       <div class="ta-subs">
         ${[["MACD", "taMacd"], ["KD", "taKd"], ["J", "taJ"], ["RSI", "taRsi"], ["DMA", "taDma"], ["E-Ray Index", "taEray"]].map(([n, id]) => `
           <article class="card"><div class="chart-title"><span class="tag t1">${n}</span></div><div class="ta-info" data-id="${id}"></div><div class="chart ta-sub" id="${id}"></div></article>`).join("")}
+        <article class="card"><div class="chart-title"><span class="tag t1">乖離率</span>
+          <span class="bias-tools"><span class="seg bias-ma" role="group" aria-label="乖離率均線">${BIAS_MA.map((n) => `<button type="button" data-ma="${n}" aria-pressed="${n === biasCfg.ma}">${n}${perUnit(t)}</button>`).join("")}</span>
+          <button type="button" class="fib-btn fib-gear bias-gear" aria-label="乖離率範圍設定" title="正負範圍設定">⚙</button></span></div>
+          <div class="ta-info" data-id="taBias"></div><div class="chart ta-sub" id="taBias"></div></article>
       </div>
-      <p class="muted small note">K 線可切換日K／週K／月K（週 K 以週一起算，各根日期為該期最後交易日；所有指標依所選週期計算，52 週最高／最低一律以日 K 計算）。日 K 預設顯示近 3 個月（手機）／半年（電腦）；點選圖表可在上方資訊列查看該日數值，可用 ＋／－ 或下方拖曳條調整區間（所有圖表同步）。EMA 週期 13；布林 20 日 ±2 標準差；KD 9 日；RSI 6／12 日；DMA 為 SMA20 向後位移 5 日，AMA = 收盤 − DMA；E-Ray 為 Elder Ray（最高／最低價 − EMA13）。</p>`;
+      <p class="muted small note">K 線可切換日K／週K／月K（週 K 以週一起算，各根日期為該期最後交易日；所有指標依所選週期計算，52 週最高／最低一律以日 K 計算）。日 K 預設顯示近 3 個月（手機）／半年（電腦）；點選圖表可在上方資訊列查看該日數值，可用 ＋／－ 或下方拖曳條調整區間（所有圖表同步）。EMA 週期 13；布林 20 日 ±2 標準差；KD 9 日；RSI 6／12 日；DMA 為 SMA20 向後位移 5 日，AMA = 收盤 − DMA；E-Ray 為 Elder Ray（最高／最低價 − EMA13）；乖離率 =（收盤 − 均線）÷ 均線 × 100%，可選 5／20／50 均線，虛線為設定的正負範圍。</p>`;
 
     const kEl = view.querySelector("#taK");
     // 斐波那契：mode 0＝一般、1＝等待點選起點、2＝等待點選終點
@@ -644,6 +666,28 @@
         ],
         marks: [hline(0, css("--text"), "solid", 1)],
       })));
+      charts.push(biasChart());
+      echarts.connect(GROUP);
+      bindInfo();
+    };
+    // 乖離率：0 軸＋正負範圍虛線
+    const biasChart = () => {
+      const n = biasCfg.ma, rg = Math.abs(Number(biasCfg.range[n]) || BIAS_DEF[n]), b = bias(t, n);
+      return subChart(view.querySelector("#taBias"), t, span, (P) => ({
+        legend: true,
+        series: [line(`乖離率(${n}${perUnit(t)})`, b, "#1f3fe0", { smooth: false })],
+        marks: [hline(0, css("--text"), "solid", 1), { ...hline(rg, P.up, "dashed", 1.2), label: { show: true, position: "insideEndTop", formatter: `+${rg}%`, color: P.up, fontSize: 10 } },
+          { ...hline(-rg, P.down, "dashed", 1.2), label: { show: true, position: "insideEndBottom", formatter: `−${rg}%`, color: P.down, fontSize: 10 } }],
+        yAxis: { axisLabel: { color: P.text, fontSize: 10, formatter: (v) => v + "%" } },
+      }));
+    };
+    const redrawBias = () => {
+      const k = charts.findIndex((c) => c.getDom().id === "taBias");
+      if (k < 0) return;
+      const cur = charts[0].getOption().dataZoom[0];
+      charts[k].dispose();
+      charts[k] = biasChart();
+      charts[k].dispatchAction({ type: "dataZoom", startValue: cur.startValue, endValue: cur.endValue });
       echarts.connect(GROUP);
       bindInfo();
     };
@@ -675,6 +719,49 @@
       try { localStorage.setItem(PER_KEY, k); } catch (err) { /* ignore */ }
       view.querySelectorAll(".ta-per button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.per === k)));
       render(view, params);
+    });
+    view.querySelector(".bias-ma").addEventListener("click", (e) => {
+      const n = +e.target.closest("[data-ma]")?.dataset.ma;
+      if (!n || n === biasCfg.ma) return;
+      biasCfg = { ...biasLoad(), ma: n };
+      biasSave(biasCfg);
+      view.querySelectorAll(".bias-ma button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.ma === n)));
+      redrawBias();
+    });
+    view.querySelector(".bias-gear").addEventListener("click", () => {
+      const el = document.createElement("div");
+      el.className = "sheet";
+      el.innerHTML = `
+        <header class="sheet-head">
+          <button type="button" class="sheet-btn" data-act="cancel">取消</button>
+          <h2>乖離率範圍</h2>
+          <button type="button" class="sheet-btn strong" data-act="save">儲存</button>
+        </header>
+        <div class="sheet-body"><form class="lg-form" autocomplete="off">
+          ${BIAS_MA.map((n) => `<label>${n} 均線 正負範圍（%）<input name="r${n}" type="number" inputmode="decimal" step="0.5" min="0.5" max="100" value="${biasCfg.range[n]}"></label>`).join("")}
+          <button type="button" class="btn-ghost" data-act="reset">恢復預設（${BIAS_MA.map((n) => "±" + BIAS_DEF[n]).join("／")}）</button>
+          <p class="muted small">乖離率圖上的虛線為 ±範圍；超過正範圍代表股價高於均線過多（過熱），低於負範圍代表低於均線過多（超跌）。</p>
+        </form></div>`;
+      document.body.appendChild(el);
+      document.body.classList.add("no-scroll");
+      const close = () => { el.remove(); if (!document.querySelector(".sheet")) document.body.classList.remove("no-scroll"); };
+      el.addEventListener("click", (ev) => {
+        const a = ev.target.closest("[data-act]")?.dataset.act;
+        if (a === "cancel") close();
+        if (a === "reset") BIAS_MA.forEach((n) => { el.querySelector(`[name=r${n}]`).value = BIAS_DEF[n]; });
+        if (a === "save") {
+          const range = {};
+          for (const n of BIAS_MA) {
+            const v = Math.abs(parseFloat(el.querySelector(`[name=r${n}]`).value));
+            if (!isFinite(v) || v <= 0 || v > 100) { App.toast(`${n} 均線的範圍請輸入 0～100 之間的數字`); return; }
+            range[n] = v;
+          }
+          biasCfg = { ...biasLoad(), range };
+          biasSave(biasCfg);
+          close();
+          redrawBias();
+        }
+      });
     });
     view.querySelector("#taStock").addEventListener("change", (e) => { location.hash = `#/tech?code=${encodeURIComponent(e.target.value)}`; });
     const redrawK = () => {

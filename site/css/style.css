@@ -921,3 +921,8 @@ body { background: transparent; }
 
 /* 選單標題（隱藏入口）：避免連點時放大畫面或選取文字 */
 .drawer-head strong { touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; cursor: default; }
+
+/* 技術分析：乖離率均線切換 */
+.bias-tools { display: flex; align-items: center; gap: 6px; }
+.bias-ma { padding: 0; overflow: visible; }
+.bias-ma button { padding: 4px 10px; font-size: 13px; }
