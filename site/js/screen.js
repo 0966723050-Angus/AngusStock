@@ -14,6 +14,7 @@
   const ok = (...v) => v.every((x) => x != null && isFinite(x));
   const spread = (a) => (ok(a.s5, a.s10, a.s20, a.s60) ? ((Math.max(a.s5, a.s10, a.s20, a.s60) - Math.min(a.s5, a.s10, a.s20, a.s60)) / Math.min(a.s5, a.s10, a.s20, a.s60)) * 100 : null);
   const tangled = (a) => { const s = spread(a); return s != null && s <= 5; };
+  const bias = (a, f) => ((a.p - a[f]) / a[f]) * 100;
   const monthKey = (mo) => (mo ? (mo[1] + mo[2]) / 2 : null); // 月關鍵價 =（月最高 + 月最低）÷ 2
 
   // 條件：test(t 今天, y 昨天, row) → 是否符合；show → 表格顯示值；sort → 排序用數值
@@ -54,6 +55,11 @@
       { id: "p_s10", label: "股價＞SMA10", note: "今天價格＞10 日均線",
         test: (t) => ok(t.p, t.s10) && t.p > t.s10, show: (t) => `${fmt(t.p)}／${fmt(t.s10)}`, sort: (t) => t.p / t.s10 },
     ] },
+    // 乖離率 =（股價 − 均線）÷ 均線 × 100%；條件為正負範圍以內（與技術分析頁乖離率的預設範圍相同）
+    { title: "乖離率", items: [[5, "s5", 5], [20, "s20", 10], [50, "s50", 15]].map(([n, f, r]) => ({
+      id: `bias_${n}`, label: `${n}MA 乖離率＜${r}%`, note: `今天股價與 ${n} 日均線的乖離率在 ±${r}% 以內`,
+      test: (t) => ok(t.p, t[f]) && t[f] > 0 && Math.abs(bias(t, f)) < r,
+      show: (t) => `${bias(t, f) > 0 ? "+" : ""}${fmt(bias(t, f))}%`, sort: (t) => -Math.abs(bias(t, f)) })) },
     { title: "EMA13", items: [
       { id: "e13_up", label: "股價向上穿越 EMA13", note: "昨天股價≦EMA13，今天股價＞EMA13",
         test: (t, y) => ok(t.p, t.e13, y.p, y.e13) && y.p <= y.e13 && t.p > t.e13,
