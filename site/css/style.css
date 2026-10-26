@@ -918,3 +918,6 @@ body { background: transparent; }
 /* 技術分析：K 線週期切換 */
 .ta-per { padding: 0; flex: none; overflow: visible; }
 .ta-per button { padding: 5px 12px; }
+
+/* 選單標題（隱藏入口）：避免連點時放大畫面或選取文字 */
+.drawer-head strong { touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; cursor: default; }

@@ -691,5 +691,5 @@
     };
   }
 
-  App.register({ id: "ledger", title: "帳務查詢", icon: "💰", render });
+  App.register({ id: "ledger", title: "帳務查詢", icon: "💰", hidden: true, render }); // 不列在選單：開啟選單後快速點兩下「Angus 股市」進入
 })();

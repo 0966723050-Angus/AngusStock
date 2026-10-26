@@ -493,6 +493,12 @@
     $("#showPwd").addEventListener("change", (e) => { $("#loginPwd").type = e.target.checked ? "text" : "password"; });
     $("#menuBtn").addEventListener("click", () => openMenu(!$("#drawer").classList.contains("open")));
     $("#scrim").addEventListener("click", () => openMenu(false));
+    // 隱藏入口：選單上方「Angus 股市」0.4 秒內點兩下 → 帳務查詢
+    let tapAt = 0;
+    $(".drawer-head strong").addEventListener("click", () => {
+      const now = Date.now();
+      if (now - tapAt < 400) { tapAt = 0; openMenu(false); location.hash = "#/ledger"; } else tapAt = now;
+    });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") openMenu(false); });
     $("#logoutBtn").addEventListener("click", () => {
       storeClear(); bioSet(null); liveClear(); dataKey = null; rawKeyB64 = null; openMenu(false); showLogin("已登出");
