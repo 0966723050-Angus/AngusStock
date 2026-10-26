@@ -403,6 +403,19 @@
       return `<span class="ti"><i style="background:${color}"></i>${esc(s.name)} <b>${fmt(v, Math.abs(v) >= 1e4 ? 0 : 2)}</b></span>`;
     }).join("");
   }
+  function macdMarks(t, P) {
+    const { dif, sig } = t.macd, out = [];
+    const dot = (i, color) => ({ coord: [i, dif[i]], symbol: "circle", symbolSize: 8, itemStyle: { color } });
+    const star = (i, color) => ({ coord: [i, dif[i]], symbol: "path://M50 0 L61 35 L98 35 L68 57 L79 91 L50 70 L21 91 L32 57 L2 35 L39 35 Z",
+      symbolSize: 12, itemStyle: { color } });
+    for (let i = 1; i < dif.length; i++) {
+      if (dif[i - 1] <= sig[i - 1] && dif[i] > sig[i]) out.push(dot(i, P.up));
+      else if (dif[i - 1] >= sig[i - 1] && dif[i] < sig[i]) out.push(dot(i, P.down));
+      if (dif[i - 1] <= 0 && dif[i] > 0) out.push(star(i, P.up));
+      else if (dif[i - 1] >= 0 && dif[i] < 0) out.push(star(i, P.down));
+    }
+    return out;
+  }
   const hline = (y, color, type = "dotted", width = 2) => ({ yAxis: y, lineStyle: { color, type, width } });
 
   // ------------------------------------------------------------ 左側指標表
@@ -624,8 +637,8 @@
             const style = v >= 0 ? { color: P.up } : v < prev ? { color: "#2e7d32" } : { color: css("--surface"), borderColor: css("--text-2"), borderWidth: 1 };
             return { value: v, itemStyle: style };
           }) },
-          line("MACD-快", t.macd.dif, P.dif, { markPoint: { symbol: "circle", symbolSize: 10, itemStyle: { color: "#4caf28" }, label: { show: false },
-            data: t.macd.dif.map((v, i) => (i > 0 && t.macd.dif[i - 1] <= t.macd.sig[i - 1] && v > t.macd.sig[i] ? { coord: [i, v] } : null)).filter(Boolean) } }),
+          // 標記：黃金交叉紅點／死亡交叉綠點；快線向上穿越 0 軸紅星／向下穿越綠星
+          line("MACD-快", t.macd.dif, P.dif, { markPoint: { silent: true, label: { show: false }, data: macdMarks(t, P) } }),
           line("MACD-慢", t.macd.sig, P.sig),
         ],
         marks: [hline(0, css("--text"), "solid", 1.5)],
