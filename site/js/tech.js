@@ -633,9 +633,10 @@
         legend: true,
         series: [
           { name: "柱狀體", type: "bar", barWidth: "70%", barMaxWidth: 16, itemStyle: { color: "#ff2020" }, data: t.macd.hist.map((v, i) => {
+            // ＞0：比昨天大深紅、否則粉紅；＜0：比昨天小深綠、否則淺綠
             const prev = i > 0 ? t.macd.hist[i - 1] : v;
-            const style = v >= 0 ? { color: P.up } : v < prev ? { color: "#2e7d32" } : { color: css("--surface"), borderColor: css("--text-2"), borderWidth: 1 };
-            return { value: v, itemStyle: style };
+            const color = v >= 0 ? (v > prev ? "#b71c1c" : "#f48fb1") : (v < prev ? "#1b5e20" : "#81c784");
+            return { value: v, itemStyle: { color } };
           }) },
           // 標記：黃金交叉紅點／死亡交叉綠點；快線向上穿越 0 軸紅星／向下穿越綠星
           line("MACD-快", t.macd.dif, P.dif, { markPoint: { silent: true, label: { show: false }, data: macdMarks(t, P) } }),
