@@ -55,11 +55,17 @@
       { id: "p_s10", label: "股價＞SMA10", note: "今天價格＞10 日均線",
         test: (t) => ok(t.p, t.s10) && t.p > t.s10, show: (t) => `${fmt(t.p)}／${fmt(t.s10)}`, sort: (t) => t.p / t.s10 },
     ] },
-    // 乖離率 =（股價 − 均線）÷ 均線 × 100%；條件為正負範圍以內（與技術分析頁乖離率的預設範圍相同）
-    { title: "乖離率", items: [[5, "s5", 5], [20, "s20", 10], [50, "s50", 15]].map(([n, f, r]) => ({
-      id: `bias_${n}`, label: `${n}MA 乖離率＜${r}%`, note: `今天股價與 ${n} 日均線的乖離率在 ±${r}% 以內`,
-      test: (t) => ok(t.p, t[f]) && t[f] > 0 && Math.abs(bias(t, f)) < r,
-      show: (t) => `${bias(t, f) > 0 ? "+" : ""}${fmt(bias(t, f))}%`, sort: (t) => -Math.abs(bias(t, f)) })) },
+    // 乖離率 =（股價 − 均線）÷ 均線 × 100%；只篩負乖離：股價低於均線超過設定比例（與技術分析頁乖離率的預設範圍相同）
+    { title: "乖離率（負乖離）", items: [[5, "s5", 5], [20, "s20", 10], [50, "s50", 15]].map(([n, f, r]) => ({
+      id: `nbias_${n}`, label: `${n}MA 乖離率＜−${r}%`, note: `今天股價低於 ${n} 日均線超過 ${r}%（乖離率＜−${r}%）`,
+      test: (t) => ok(t.p, t[f]) && t[f] > 0 && bias(t, f) < -r,
+      show: (t) => `${fmt(bias(t, f))}%`, sort: (t) => -bias(t, f) })) },
+    { title: "布林通道", items: [
+      { id: "boll_up", label: "股價＞上布林", note: "今天股價＞布林上軌（20 日 +2 標準差）",
+        test: (t) => ok(t.p, t.bu) && t.p > t.bu, show: (t) => `${fmt(t.p)}／${fmt(t.bu)}`, sort: (t) => t.p / t.bu },
+      { id: "boll_lo", label: "股價＜下布林", note: "今天股價＜布林下軌（20 日 −2 標準差）",
+        test: (t) => ok(t.p, t.bl) && t.p < t.bl, show: (t) => `${fmt(t.p)}／${fmt(t.bl)}`, sort: (t) => t.bl / t.p },
+    ] },
     { title: "EMA13", items: [
       { id: "e13_up", label: "股價向上穿越 EMA13", note: "昨天股價≦EMA13，今天股價＞EMA13",
         test: (t, y) => ok(t.p, t.e13, y.p, y.e13) && y.p <= y.e13 && t.p > t.e13,
