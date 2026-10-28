@@ -10,7 +10,7 @@
  *   ?t=taifex&mt=0                                      期交所台指期即時報價（0＝日盤、1＝夜盤）
  *   ?t=yahoo&s=^DJI,^SOX,GC=F                           Yahoo Finance 國際行情
  *   ?t=kline&s=2313.TW&i=1wk                            Yahoo Finance 週 K（1wk，近 5 年）／月 K（1mo，近 10 年）歷史
- *   ?t=split&s=2330.TW,6488.TWO                         Yahoo 奇摩股市個股分時量：09:30～11:40、11:41～12:20 的成交量（隔日沖選股；最多 200 檔）
+ *   ?t=split&s=2330.TW,6488.TWO                         Yahoo 奇摩股市個股分時量：09:30～11:40、11:41～13:20 的成交量（隔日沖選股；最多 200 檔）
  *
  * 部署：script.google.com → 新專案 → 貼上本檔 → 部署 → 新增部署作業 → 類型「網頁應用程式」
  *       執行身分：我　／　誰可以存取：所有人 → 部署 → 複製「網頁應用程式網址」
@@ -123,7 +123,7 @@ function intraday(s) {
 }
 
 // 分時量（隔日沖選股）：每次 50 檔同時查詢當日每分鐘走勢，只回傳區間量（張）
-// rows＝[[代號, 09:30～11:40 成交量, 11:41～12:20 成交量（未到 12:20 則到最新一分鐘）, 最新一分鐘 HH:MM, 日期 YYYY-MM-DD]]
+// rows＝[[代號, 09:30～11:40 成交量, 11:41～13:20 成交量（未到 13:20 則到最新一分鐘）, 最新一分鐘 HH:MM, 日期 YYYY-MM-DD]]
 function split(s) {
   if (!s || !/^[0-9A-Z.,]+$/.test(s)) return { error: 'bad symbols' };
   var syms = s.split(',').filter(function (x) { return /^[0-9A-Z]{4,6}\.(TW|TWO)$/.test(x); }).slice(0, 200), reqs = [], rows = [];
@@ -140,7 +140,7 @@ function split(s) {
         (c.timestamp || []).forEach(function (t, i) {
           var d = new Date(t * 1000 + 8 * 3600e3), hm = d.toISOString().slice(11, 16), v = q.volume[i] || 0;
           if (hm >= '09:30' && hm <= '11:40') am += v;
-          else if (hm >= '11:41' && hm <= '12:20') pm += v;
+          else if (hm >= '11:41' && hm <= '13:20') pm += v;
           if (q.close[i] != null && hm > last) { last = hm; day = d.toISOString().slice(0, 10); }
         });
         rows.push([String(c.meta.symbol || '').split('.')[0], am, pm, last, day]);

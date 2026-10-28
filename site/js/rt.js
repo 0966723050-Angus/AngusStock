@@ -12,7 +12,7 @@
   const numv = (x) => { const v = parseFloat(String(x ?? "").replace(/,/g, "")); return isFinite(v) ? v : null; };
   const pd = (p) => (p != null && p >= 1000 && p % 1 === 0 ? 0 : 2);
 
-  // 欄位：today 今日量、prev 昨日量、amt 成交金額（億元）、pct 漲跌幅、amp 振幅、am 09:30～11:40 量、pm 11:41～12:20 量、ratio 午盤量／早盤量
+  // 欄位：today 今日量、prev 昨日量、amt 成交金額（億元）、pct 漲跌幅、amp 振幅、am 09:30～11:40 量、pm 11:41～13:20 量、ratio 午盤量／早盤量
   const COLS = {
     px: { t: "價格", v: (r) => r.px, f: (r) => `<b>${fmt(r.px, pd(r.px))}</b>`, c: (r) => cls(r.pct) },
     pct: { t: "漲跌%", v: (r) => r.pct, f: (r) => sgn(r.pct), c: (r) => cls(r.pct) },
@@ -131,16 +131,16 @@
       else if (dt && !split) body = `<div class="card empty">${esc(msg || "按「立即查詢」計算隔日沖")}</div>`;
       else if (tab.id === "amt" && base.noAmt) body = '<div class="card empty">成交金額需要更新 Apps Script（第 9 版）後才能取得</div>';
       else body = `<article class="card">${table(tab, rankRows(tab, minVol))}</article>`;
-      const range = dt && split && split.last ? `｜午盤量區間 11:41～${split.last < "12:20" ? split.last : "12:20"}` : "";
+      const range = dt && split && split.last ? `｜午盤量區間 11:41～${split.last < "13:20" ? split.last : "13:20"}` : "";
       view.innerHTML = `
         <div class="section-title"><h2>即時選股</h2>
           <span class="watch-meta"><span class="muted small">${base ? `報價時間 ${esc(base.at)}｜${base.rows.length} 檔${esc(range)}` : ""}</span>
           <button type="button" class="btn-ghost rt-go"${busy ? " disabled" : ""}>立即查詢</button></span></div>
         <div class="seg rt-tabs" role="tablist">${TABS.map((t) => `<button type="button" role="tab" data-tab="${t.id}" aria-pressed="${t.id === tabId}">${t.t}</button>`).join("")}</div>
         ${dt ? `<div class="rt-opt"><label>今日量 ≥ <input type="number" class="rt-min" inputmode="numeric" min="0" step="100" value="${minVol}"> 張</label>
-          <span class="muted small">比值 = 11:41～12:20 成交量 ÷ 09:30～11:40 成交量（未到 12:20 時算到查詢當下）</span></div>` : ""}
+          <span class="muted small">比值 = 11:41～13:20 成交量 ÷ 09:30～11:40 成交量（未到 13:20 時算到查詢當下）</span></div>` : ""}
         ${body}
-        <p class="muted small note">資料來源：Yahoo 奇摩股市即時報價（上市櫃普通股，不含 ETF），每次查詢約需 5～15 秒；各分頁列出前 ${TOP} 名。漲跌幅、振幅以昨收為基準；振幅 =（最高 − 最低）÷ 昨收；成交量單位：張；金額單位：億元。隔日沖：早盤量 = 09:30～11:40、午盤量 = 11:41～12:20（12:20 前查詢則算到當下最新一分鐘），11:41 以前無法計算。點股票名稱開啟技術分析。</p>`;
+        <p class="muted small note">資料來源：Yahoo 奇摩股市即時報價（上市櫃普通股，不含 ETF），每次查詢約需 5～15 秒；各分頁列出前 ${TOP} 名。漲跌幅、振幅以昨收為基準；振幅 =（最高 − 最低）÷ 昨收；成交量單位：張；金額單位：億元。隔日沖：早盤量 = 09:30～11:40、午盤量 = 11:41～13:20（13:20 前查詢則算到當下最新一分鐘），11:41 以前無法計算。點股票名稱開啟技術分析。</p>`;
     };
 
     const query = async () => {
@@ -162,7 +162,7 @@
     // 隔日沖：交易日 11:41 以前無法計算（收盤後或非交易日則以最近交易日計算）
     const querySplit = async () => {
       const now = App.taipei(), today = now.slice(0, 10), hm = now.slice(11, 16);
-      if (base && base.at.slice(0, 10) === today && hm < "11:41") { msg = "隔日沖需 11:41 以後才能計算（午盤量區間 11:41～12:20）"; return; }
+      if (base && base.at.slice(0, 10) === today && hm < "11:41") { msg = "隔日沖需 11:41 以後才能計算（午盤量區間 11:41～13:20）"; return; }
       msg = "擷取各股分時量…"; draw();
       list = list || await universe();
       const have = new Set(base.rows.map((r) => r.c));
