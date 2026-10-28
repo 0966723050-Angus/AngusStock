@@ -518,7 +518,16 @@
     disposeCharts();
     const d = await App.loadData("home");
     const cached = await App.liveLoad("index", d.updated); // 比網站資料新的大盤即時暫存
-    if (cached) Object.assign(d, { tse: cached.tse, otc: cached.otc, updated: cached.updated });
+    if (cached) {
+      // 即時暫存沒有的欄位（漲跌家數等盤後才有的資料）以同一交易日的網站資料補上
+      const fill = (live, site) => {
+        if (!live || !site || live.date !== site.date) return live || site;
+        const out = { ...live };
+        for (const [k, v] of Object.entries(site)) if (out[k] == null && v != null) out[k] = v;
+        return out;
+      };
+      Object.assign(d, { tse: fill(cached.tse, d.tse), otc: fill(cached.otc, d.otc), updated: cached.updated });
+    }
     App.setUpdated(d.updated);
     view.innerHTML = `
       <div class="section-title"><h2>大盤指數</h2><span class="muted small idx-updated">更新時間 ${d.updated || "--"}</span></div>
