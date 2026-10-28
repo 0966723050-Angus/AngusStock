@@ -323,7 +323,7 @@ body.no-scroll { overflow: hidden; }
 .sheet-head h2 { margin: 0; min-width: 0; text-align: center; font-size: 17px; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; overflow: hidden; }
 .sheet-btn { border: 0; background: transparent; color: #fff; font-size: 16px; padding: 10px 12px; cursor: pointer; }
 .sheet-btn.strong { font-weight: 700; }
-.sheet-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+.sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 .edit-list, .result-list { list-style: none; margin: 0 auto; padding: 0; max-width: 720px; background: var(--surface); }
 .edit-list li, .result-list li {
   display: flex; align-items: center; gap: 14px;
@@ -950,3 +950,7 @@ body { background: transparent; }
   .rt-tbl .stk b { font-size: 13px; white-space: normal; line-height: 1.25; }
   .rt-tbl td.num b { font-size: 12.5px; }
 }
+
+/* 編輯面板：清單很長時「＋ 新增」按鈕固定在畫面下方，不需捲到底 */
+.sheet-body:has(> .add-wrap) { padding-bottom: 0; }
+.sheet-body > .add-wrap { position: sticky; bottom: 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--border); }
