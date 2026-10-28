@@ -926,3 +926,27 @@ body { background: transparent; }
 .bias-tools { display: flex; align-items: center; gap: 6px; }
 .bias-ma { padding: 0; overflow: visible; }
 .bias-ma button { padding: 4px 10px; font-size: 13px; }
+
+/* ---------- 即時選股 ---------- */
+.rt-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; padding: 0 0 10px; overflow: visible; }
+.rt-tabs button { padding: 7px 0; text-align: center; }
+@media (max-width: 420px) { .rt-tabs { gap: 4px; } .rt-tabs button { font-size: 13px; letter-spacing: -0.3px; } }
+.rt-opt { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 10px; font-size: 14px; }
+.rt-opt input { width: 80px; font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.rt-scroll { overflow: visible; }
+.card:has(> .rt-scroll) { overflow: clip; }
+.rt-scroll thead th { position: sticky; top: calc(52px + env(safe-area-inset-top)); z-index: 2; }
+.rt-tbl th.sorted { color: var(--accent); }
+.rt-tbl .stk a { color: var(--text); text-decoration: none; display: block; text-align: left; }
+.rt-tbl .stk b { display: block; font-size: 14px; }
+.rt-tbl .stk small { color: var(--muted); font-size: 11px; }
+.rt-tbl td.num b { font-size: 14px; }
+.rt-tbl .empty .spinner, .card.empty .spinner { display: inline-block; vertical-align: middle; }
+@media (max-width: 520px) {
+  .rt-tbl { table-layout: fixed; width: 100%; }
+  .rt-tbl th, .rt-tbl td { padding: 8px 1px; font-size: 12px; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+  .rt-tbl th:first-child { width: 19%; }
+  .rt-tbl .stk { padding-left: 3px; }
+  .rt-tbl .stk b { font-size: 13px; white-space: normal; line-height: 1.25; }
+  .rt-tbl td.num b { font-size: 12.5px; }
+}

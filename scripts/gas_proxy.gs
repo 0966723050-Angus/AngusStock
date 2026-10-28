@@ -10,6 +10,7 @@
  *   ?t=taifex&mt=0                                      期交所台指期即時報價（0＝日盤、1＝夜盤）
  *   ?t=yahoo&s=^DJI,^SOX,GC=F                           Yahoo Finance 國際行情
  *   ?t=kline&s=2313.TW&i=1wk                            Yahoo Finance 週 K（1wk，近 5 年）／月 K（1mo，近 10 年）歷史
+ *   ?t=split&s=2330.TW,6488.TWO                         Yahoo 奇摩股市個股分時量：09:30～11:40、11:41～12:20 的成交量（隔日沖選股；最多 200 檔）
  *
  * 部署：script.google.com → 新專案 → 貼上本檔 → 部署 → 新增部署作業 → 類型「網頁應用程式」
  *       執行身分：我　／　誰可以存取：所有人 → 部署 → 複製「網頁應用程式網址」
@@ -28,6 +29,7 @@ function doGet(e) {
     else if (p.t === 'taifex') out = taifex(p.mt);
     else if (p.t === 'yahoo') out = yahoo(p.s);
     else if (p.t === 'kline') out = kline(p.s, p.i);
+    else if (p.t === 'split') out = split(p.s);
     else out = { error: 'unknown type' };
   } catch (err) {
     out = { error: String(err) };
@@ -75,7 +77,7 @@ function mis(exch) {
   return { rows: rows };
 }
 
-// Yahoo 奇摩股市即時報價（證交所 MIS 連線不穩時的備援）；回傳欄位與 mis 相同（v 為張數），另含 inM 內盤、outM 外盤、pv 昨日成交量（張）
+// Yahoo 奇摩股市即時報價（證交所 MIS 連線不穩時的備援）；回傳欄位與 mis 相同（v 為張數），另含 inM 內盤、outM 外盤、pv 昨日成交量（張）、amt 成交金額（百萬元）
 function tw(s) {
   if (!s || !/^[\^A-Za-z0-9.,]+$/.test(s)) return { error: 'bad symbols' };
   var syms = s.split(',').slice(0, 300), reqs = [], rows = [];
@@ -90,11 +92,14 @@ function tw(s) {
     try {
       JSON.parse(r.getContentText()).forEach(function (x) {
         var code = x.symbol === '^TWII' ? 't00' : x.symbol === '^TWOII' ? 'o00' : x.systexId;
-        var t = x.regularMarketTime ? new Date(new Date(x.regularMarketTime).getTime() + 8 * 3600e3).toISOString() : '';
+        // 當日無成交的股票 regularMarketTime 為「-」，不可轉成日期（否則整批 50 檔都會失敗）
+        var ms = x.regularMarketTime ? new Date(x.regularMarketTime).getTime() : NaN;
+        var t = isFinite(ms) ? new Date(ms + 8 * 3600e3).toISOString() : '';
         rows.push({ c: code, z: raw(x.price), y: raw(x.regularMarketPreviousClose), o: raw(x.regularMarketOpen), h: raw(x.regularMarketDayHigh),
           l: raw(x.regularMarketDayLow), v: x.volume ? String(Math.round(Number(x.volume) / 1000)) : null,
           d: t.slice(0, 10).replace(/-/g, ''), t: t.slice(11, 19), src: 'yahoo',
-          inM: x.inMarket != null ? x.inMarket : null, outM: x.outMarket != null ? x.outMarket : null, pv: x.previousVolumeK != null ? x.previousVolumeK : null });
+          inM: x.inMarket != null ? x.inMarket : null, outM: x.outMarket != null ? x.outMarket : null, pv: x.previousVolumeK != null ? x.previousVolumeK : null,
+          amt: x.turnoverM != null ? x.turnoverM : null });
       });
     } catch (err) { /* 略過 */ }
   });
@@ -115,6 +120,34 @@ function intraday(s) {
   });
   var day = m.regularMarketTime ? new Date(m.regularMarketTime * 1000 + 8 * 3600e3).toISOString().slice(0, 10) : '';
   return { sym: s, day: day, price: m.regularMarketPrice, prev: m.previousClose, up: m.limitUpPrice, down: m.limitDownPrice, rows: rows };
+}
+
+// 分時量（隔日沖選股）：每次 50 檔同時查詢當日每分鐘走勢，只回傳區間量（張）
+// rows＝[[代號, 09:30～11:40 成交量, 11:41～12:20 成交量（未到 12:20 則到最新一分鐘）, 最新一分鐘 HH:MM, 日期 YYYY-MM-DD]]
+function split(s) {
+  if (!s || !/^[0-9A-Z.,]+$/.test(s)) return { error: 'bad symbols' };
+  var syms = s.split(',').filter(function (x) { return /^[0-9A-Z]{4,6}\.(TW|TWO)$/.test(x); }).slice(0, 200), reqs = [], rows = [];
+  for (var i = 0; i < syms.length; i += 50) {
+    reqs.push({ url: 'https://tw.stock.yahoo.com/_td-stock/api/resource/FinanceChartService.ApacLibraCharts;symbols=' +
+      encodeURIComponent(JSON.stringify(syms.slice(i, i + 50))) + ';type=tick', headers: { 'User-Agent': UA }, muteHttpExceptions: true });
+  }
+  var resps;
+  try { resps = UrlFetchApp.fetchAll(reqs); } catch (err) { resps = reqs.map(fetchRetry); }
+  resps.forEach(function (r) {
+    try {
+      JSON.parse(r.getContentText()).forEach(function (x) {
+        var c = x.chart, q = (c.indicators.quote || [{}])[0], am = 0, pm = 0, last = '', day = '';
+        (c.timestamp || []).forEach(function (t, i) {
+          var d = new Date(t * 1000 + 8 * 3600e3), hm = d.toISOString().slice(11, 16), v = q.volume[i] || 0;
+          if (hm >= '09:30' && hm <= '11:40') am += v;
+          else if (hm >= '11:41' && hm <= '12:20') pm += v;
+          if (q.close[i] != null && hm > last) { last = hm; day = d.toISOString().slice(0, 10); }
+        });
+        rows.push([String(c.meta.symbol || '').split('.')[0], am, pm, last, day]);
+      });
+    } catch (err) { /* 略過失敗的批次 */ }
+  });
+  return { rows: rows };
 }
 
 // 週／月 K 歷史：rows＝[[期間起始日 YYYY-MM-DD, 開, 高, 低, 收, 成交量(股)]]
