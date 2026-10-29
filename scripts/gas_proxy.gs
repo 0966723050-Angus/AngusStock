@@ -172,30 +172,43 @@ function breadth(d) {
   if (!/^\d{8}$/.test(d || '')) return { error: 'bad date' };
   var num = function (x) { return parseInt(String(x || '0').replace(/,/g, ''), 10) || 0; };
   var pair = function (x) { var m = /([\d,]+)\(([\d,]+)\)/.exec(x || ''); return m ? [num(m[1]), num(m[2])] : [num(x), 0]; };
-  var resps = UrlFetchApp.fetchAll([
-    { url: 'https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&type=MS&date=' + d, headers: { 'User-Agent': UA }, muteHttpExceptions: true },
-    { url: 'https://www.tpex.org.tw/www/zh-tw/afterTrading/highlight?response=json&date=' + d.slice(0, 4) + '/' + d.slice(4, 6) + '/' + d.slice(6),
-      headers: { 'User-Agent': UA }, muteHttpExceptions: true }]);
+  var err = [];
+  // 各來源分開查詢：一邊逾時或尚未公布不影響另一邊；失敗原因放在 err 方便除錯
+  var get = function (url) {
+    try {
+      var r = UrlFetchApp.fetch(url, { headers: { 'User-Agent': UA }, muteHttpExceptions: true });
+      if (r.getResponseCode() !== 200) { err.push(r.getResponseCode() + ' ' + url); return null; }
+      return JSON.parse(r.getContentText());
+    } catch (e) { err.push(String(e).slice(0, 120)); return null; }
+  };
   var tse = null, otc = null;
-  try {
-    var j = JSON.parse(resps[0].getContentText());
-    (j.date === d ? j.tables || [] : []).forEach(function (t) {
+  var q = 'response=json&type=MS&date=' + d;
+  ['https://www.twse.com.tw/exchangeReport/MI_INDEX?' + q, 'https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?' + q].some(function (url) {
+    var j = get(url);
+    if (!j) return false;
+    if (j.date !== d) { err.push('twse ' + (j.stat || j.date)); return false; }
+    (j.tables || []).forEach(function (t) {
       if (t.title !== '漲跌證券數合計') return;
       var m = {};
       t.data.forEach(function (r) { m[r[0]] = r[2]; }); // 「股票」欄
       var u = pair(m['上漲(漲停)']), w = pair(m['下跌(跌停)']);
       tse = { up: u[0], limit_up: u[1], flat: num(m['持平']), down: w[0], limit_down: w[1] };
     });
-  } catch (err) { /* 尚未公布或連線失敗 */ }
+    return !!tse;
+  });
+  var h = get('https://www.tpex.org.tw/www/zh-tw/afterTrading/highlight?response=json&date=' + d.slice(0, 4) + '/' + d.slice(4, 6) + '/' + d.slice(6));
   try {
-    var t = JSON.parse(resps[1].getContentText()).tables[0], roc = String(t.date).split('/');
-    if (String(+roc[0] + 1911) + roc[1] + roc[2] === d) {
-      var r = {};
-      t.fields.forEach(function (f, i) { r[f] = t.data[0][i]; });
-      otc = { up: num(r['上漲家數']), limit_up: num(r['漲停家數']), flat: num(r['平盤家數']), down: num(r['下跌家數']), limit_down: num(r['跌停家數']) };
+    var t = h && h.tables && h.tables[0];
+    if (t) {
+      var roc = String(t.date).split('/');
+      if (String(+roc[0] + 1911) + roc[1] + roc[2] === d) {
+        var r = {};
+        t.fields.forEach(function (f, i) { r[f] = t.data[0][i]; });
+        otc = { up: num(r['上漲家數']), limit_up: num(r['漲停家數']), flat: num(r['平盤家數']), down: num(r['下跌家數']), limit_down: num(r['跌停家數']) };
+      }
     }
-  } catch (err) { /* 尚未公布或連線失敗 */ }
-  return { date: d, tse: tse, otc: otc };
+  } catch (e) { err.push('tpex ' + String(e).slice(0, 80)); }
+  return { date: d, tse: tse, otc: otc, err: err };
 }
 
 // 期交所：台指期（日盤／夜盤）全部月份，近月由網頁端判斷
