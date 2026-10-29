@@ -10,6 +10,7 @@
  *   ?t=taifex&mt=0                                      期交所台指期即時報價（0＝日盤、1＝夜盤）
  *   ?t=yahoo&s=^DJI,^SOX,GC=F                           Yahoo Finance 國際行情
  *   ?t=kline&s=2313.TW&i=1wk                            Yahoo Finance 週 K（1wk，近 5 年）／月 K（1mo，近 10 年）歷史
+ *   ?t=breadth&d=20261029                               證交所／櫃買中心盤後漲跌家數（上市「股票」、上櫃股票；尚未公布則為 null）
  *   ?t=split&s=2330.TW,6488.TWO                         Yahoo 奇摩股市個股分時量：09:30～11:40、11:41～13:20 的成交量（隔日沖選股；最多 200 檔）
  *
  * 部署：script.google.com → 新專案 → 貼上本檔 → 部署 → 新增部署作業 → 類型「網頁應用程式」
@@ -30,6 +31,7 @@ function doGet(e) {
     else if (p.t === 'yahoo') out = yahoo(p.s);
     else if (p.t === 'kline') out = kline(p.s, p.i);
     else if (p.t === 'split') out = split(p.s);
+    else if (p.t === 'breadth') out = breadth(p.d);
     else out = { error: 'unknown type' };
   } catch (err) {
     out = { error: String(err) };
@@ -162,6 +164,38 @@ function kline(s, iv) {
     rows.push([new Date(t * 1000 + 8 * 3600e3).toISOString().slice(0, 10), q.open[i], q.high[i], q.low[i], q.close[i], q.volume[i]]);
   });
   return { sym: s, rows: rows };
+}
+
+// 盤後漲跌家數（與 scripts/update_data.py fetch_tse_breadth／fetch_otc_breadth 相同）：
+// { tse: {up, limit_up, flat, down, limit_down}｜null, otc: 同上｜null }；尚未公布的市場為 null
+function breadth(d) {
+  if (!/^\d{8}$/.test(d || '')) return { error: 'bad date' };
+  var num = function (x) { return parseInt(String(x || '0').replace(/,/g, ''), 10) || 0; };
+  var pair = function (x) { var m = /([\d,]+)\(([\d,]+)\)/.exec(x || ''); return m ? [num(m[1]), num(m[2])] : [num(x), 0]; };
+  var resps = UrlFetchApp.fetchAll([
+    { url: 'https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&type=MS&date=' + d, headers: { 'User-Agent': UA }, muteHttpExceptions: true },
+    { url: 'https://www.tpex.org.tw/www/zh-tw/afterTrading/highlight?response=json&date=' + d.slice(0, 4) + '/' + d.slice(4, 6) + '/' + d.slice(6),
+      headers: { 'User-Agent': UA }, muteHttpExceptions: true }]);
+  var tse = null, otc = null;
+  try {
+    var j = JSON.parse(resps[0].getContentText());
+    (j.date === d ? j.tables || [] : []).forEach(function (t) {
+      if (t.title !== '漲跌證券數合計') return;
+      var m = {};
+      t.data.forEach(function (r) { m[r[0]] = r[2]; }); // 「股票」欄
+      var u = pair(m['上漲(漲停)']), w = pair(m['下跌(跌停)']);
+      tse = { up: u[0], limit_up: u[1], flat: num(m['持平']), down: w[0], limit_down: w[1] };
+    });
+  } catch (err) { /* 尚未公布或連線失敗 */ }
+  try {
+    var t = JSON.parse(resps[1].getContentText()).tables[0], roc = String(t.date).split('/');
+    if (String(+roc[0] + 1911) + roc[1] + roc[2] === d) {
+      var r = {};
+      t.fields.forEach(function (f, i) { r[f] = t.data[0][i]; });
+      otc = { up: num(r['上漲家數']), limit_up: num(r['漲停家數']), flat: num(r['平盤家數']), down: num(r['下跌家數']), limit_down: num(r['跌停家數']) };
+    }
+  } catch (err) { /* 尚未公布或連線失敗 */ }
+  return { date: d, tse: tse, otc: otc };
 }
 
 // 期交所：台指期（日盤／夜盤）全部月份，近月由網頁端判斷

@@ -499,6 +499,19 @@
     }
     return changed;
   }
+  // 盤後漲跌家數：收盤後網站資料尚未更新（上櫃常到 15 點後才公布）時，經 Apps Script 直接查證交所／櫃買中心
+  async function liveBreadth(d) {
+    const now = App.taipei(), day = now.slice(0, 10);
+    if (now.slice(11, 16) < "13:30") return false;
+    const need = ["tse", "otc"].filter((m) => d[m] && d[m].date === day && !d[m].breadth);
+    if (!need.length) return false;
+    const j = await App.live({ t: "breadth", d: day.replace(/-/g, "") }, 1);
+    let changed = false;
+    for (const m of need) if (j && j[m]) { d[m] = { ...d[m], breadth: j[m] }; changed = true; }
+    if (changed) App.liveSave("index", { updated: d.updated, tse: d.tse, otc: d.otc });
+    return changed;
+  }
+  const breadthPending = (d) => ["tse", "otc"].some((m) => d[m] && d[m].date === App.taipei().slice(0, 10) && !d[m].breadth);
   function paintIndex(view, d) {
     for (const [title, key] of [["加權指數", "tse"], ["櫃買指數", "otc"]]) {
       const el = view.querySelector(`[data-card="${title}"]`);
@@ -570,6 +583,17 @@
       };
       tick(true);
       const timer = setInterval(() => { if (!view.isConnected) clearInterval(timer); else tick(); }, 30000);
+      // 收盤後補漲跌家數：開啟時查一次，尚未公布則每 3 分鐘再查（畫面隱藏時暫停，回到畫面時立即查）
+      let bBusy = false;
+      const bTick = async () => {
+        if (bBusy || !view.isConnected || document.hidden || !breadthPending(d)) return;
+        bBusy = true;
+        try { if (await liveBreadth(d) && view.isConnected) paintIndex(view, d); } catch (e) { /* 下次再試 */ } finally { bBusy = false; }
+      };
+      bTick();
+      const bTimer = setInterval(() => { if (!view.isConnected) clearInterval(bTimer); else bTick(); }, 180000);
+      const onVis = () => { if (!view.isConnected) document.removeEventListener("visibilitychange", onVis); else if (!document.hidden) bTick(); };
+      document.addEventListener("visibilitychange", onVis);
     }
     drawMarginChart(view.querySelector('[data-margin="tse"]'), d.margin_tse, view.querySelector('[data-mg="tse"]'));
     drawMarginChart(view.querySelector('[data-margin="otc"]'), d.margin_otc, view.querySelector('[data-mg="otc"]'));
